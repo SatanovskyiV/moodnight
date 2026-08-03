@@ -1,24 +1,25 @@
 # moodnight
 
-Простір української поезії — статичний прототип на React 18 + Babel standalone (без збірки).
+A space for Ukrainian poetry — a static prototype built on React 18 + Babel standalone (no build step).
 
-**Онлайн:** https://satanovskyiv.github.io/moodnight/
+**Live:** https://satanovskyiv.github.io/moodnight/
 
-## Як запустити локально
+## Running locally
 
-Потрібен HTTP-сервер — `file://` не працює, бо JSX підвантажується через `<script src>`.
+You need an HTTP server — `file://` won't work, because the JSX is loaded via `<script src>`.
 
 ```bash
 python3 -m http.server 8777
 ```
 
-Далі відкрий http://localhost:8777/MoodNight.html
+Then open http://localhost:8777/MoodNight.html
 
-## Файли
+## Files
 
-- `MoodNight.html` — сторінка-оболонка
-- `app.jsx` — компоненти сторінки
-- `data.jsx` — приклади віршів
-- `ornaments.jsx` — SVG-орнаменти
-- `styles.css` — стилі
-- `tweaks-panel.jsx` — панель налаштувань
+- `MoodNight.html` — page shell
+- `index.html` — redirect to `MoodNight.html` (entry point for GitHub Pages)
+- `app.jsx` — page components
+- `data.jsx` — sample poems
+- `ornaments.jsx` — SVG ornaments
+- `styles.css` — styles
+- `tweaks-panel.jsx` — tweaks panel
