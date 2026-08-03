@@ -4,6 +4,8 @@ A space for Ukrainian poetry — a static prototype built on React 18 + Babel st
 
 **Live:** https://satanovskyiv.github.io/moodnight/
 
+**Roadmap:** [docs/ROADMAP.md](docs/ROADMAP.md) — the plan for turning this prototype into a real product (Next.js + NestJS + Postgres), phase by phase.
+
 ## Running locally
 
 You need an HTTP server — `file://` won't work, because the JSX is loaded via `<script src>`.
