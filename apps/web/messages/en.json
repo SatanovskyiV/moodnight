@@ -1,0 +1,23 @@
+{
+  "metadata": {
+    "title": "MoodNight",
+    "description": "A quiet stage for dark poetry"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "home": "MoodNight — home",
+    "feed": "Feed",
+    "authors": "Authors",
+    "collections": "Collections",
+    "about": "About",
+    "signIn": "Sign in"
+  },
+  "localeSwitcher": {
+    "label": "Language"
+  },
+  "home": {
+    "phase": "Phase 1",
+    "title": "MoodNight",
+    "tagline": "The frame is up. Theme, type and tokens are in place — the poetry follows."
+  }
+}

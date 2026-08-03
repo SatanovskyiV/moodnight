@@ -24,9 +24,6 @@
   --ember: oklch(67.366% 0.1412 51.76); /* #d97a3a */
   --blood: oklch(32.159% 0.0942 24.09); /* #5a1a1a */
 
-  --shadow-deep: 0 30px 80px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 40px rgba(201, 163, 90, 0.18);
-
   --texture-opacity: 0.06;
   --ornament-density: 1;
 
@@ -139,8 +136,61 @@
   --font-sans: var(--font-cormorant), "Times New Roman", serif;
   --font-serif: var(--font-cormorant), "Times New Roman", serif;
 
-  --shadow-deep: var(--shadow-deep);
-  --shadow-glow: var(--shadow-glow);
+  /* --- Measure ---
+     The prototype's two column widths (prototype/styles.css:161-175). Every
+     screen sits in one or the other, so they are tokens rather than a
+     `max-w-3xl` guessed per page — `max-w-3xl` is 864px against this 18px root
+     and already drifts from both. */
+  --container-page: 1180px; /* full editorial width — feeds, grids */
+  --container-reading: 760px; /* a single column of poetry or prose */
+
+  /* --- Type scale ---
+     Named by role, not by size. The prototype repeats the same four steps for
+     its chrome (prototype/styles.css: 0.72 / 0.78 / 0.85 / 1.1rem) and naming
+     them is what stops the next screen inventing a fifth. They sit *beside*
+     Tailwind's `text-xs…text-9xl` rather than replacing it: the root font is
+     18px, so Tailwind's ladder is off-brand for chrome but still the right
+     tool for body and headline copy. */
+  --text-micro: 0.72rem; /* compact controls — nav sign-in, locale switcher */
+  --text-caption: 0.78rem; /* buttons, captions */
+  --text-label: 0.85rem; /* IM Fell labels and nav links */
+  --text-brand: 1.1rem; /* the wordmark */
+
+  /* --- Tracking ---
+     Uppercase display type needs far more of it than Tailwind's ladder offers
+     (its widest is 0.1em), so this one starts where Tailwind's ends. */
+  --tracking-label: 0.15em; /* nav links, IM Fell labels */
+  --tracking-display: 0.18em; /* Cinzel headings */
+  --tracking-action: 0.25em; /* buttons */
+  --tracking-brand: 0.3em; /* the wordmark */
+  --tracking-eyebrow: 0.4em; /* kickers above a heading */
+
+  /* --- Glows ---
+     The prototype paints every glow as a literal rgba(201, 163, 90, ·) — the
+     brand gold, spelled out, in a dozen places. Restated as color-mix over
+     `--accent-gold` they follow a `[data-accent]` swap instead of staying gold
+     on a crimson page, and the alpha ladder is decided here once rather than
+     re-guessed per component. Names say how loud, not what wears it. */
+  --text-shadow-glow: 0 0 10px color-mix(in oklab, var(--accent-gold) 60%, transparent);
+  --text-shadow-glow-soft: 0 0 10px color-mix(in oklab, var(--accent-gold) 45%, transparent);
+
+  --shadow-deep: 0 30px 80px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 40px color-mix(in oklab, var(--accent-gold) 18%, transparent);
+  --shadow-glow-soft: 0 0 18px color-mix(in oklab, var(--accent-gold) 25%, transparent);
+  /* The prototype's inner light is rgba(255, 220, 150, 0.2) — a warmer, paler
+     gold than the border it sits inside. `--accent-bright` is that colour in
+     token form. */
+  --shadow-glow-strong:
+    0 0 24px color-mix(in oklab, var(--accent-gold) 40%, transparent),
+    inset 0 0 16px color-mix(in oklab, var(--accent-bright) 20%, transparent);
+
+  --drop-shadow-glow: 0 0 6px color-mix(in oklab, var(--accent-gold) 50%, transparent);
+
+  /* The prototype has exactly one breakpoint — 720px (prototype/styles.css:958),
+     not Tailwind's 768px `md`. Registering it as `compact:` means every ported
+     screen collapses on the same pixel the prototype does, which is the whole
+     defence against the visual drift docs/ROADMAP.md warns about. */
+  --breakpoint-compact: 45rem;
 }
 
 @layer base {

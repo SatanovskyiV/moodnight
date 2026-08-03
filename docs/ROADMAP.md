@@ -79,6 +79,17 @@ components/
 
 ⚠️ **Naming collision worth getting right up front:** the prototype's `--accent` is the gold brand colour and must map to shadcn's **`--primary`**. shadcn's own `--accent` means something different — hover/interactive state. Mapping gold onto `--accent` will make every shadcn component look wrong.
 
+**Beyond colour, the same rule.** The prototype spells out its gold as a literal `rgba(201, 163, 90, ·)` in a dozen glows, and repeats the same handful of display sizes and letter-spacings on every screen. Ported literally, each of those becomes an arbitrary value (`text-[0.85rem]`, `[text-shadow:0_0_10px_rgba(…)]`) that the next screen has to guess again — and that a `[data-accent]` swap leaves gold on a crimson page. So the ladders are registered as tokens too, in `@theme`, alongside the colours:
+
+| Namespace | Tokens | |
+|---|---|---|
+| `--text-*` | `micro` `caption` `label` `brand` | chrome sizes; body/headline copy still uses Tailwind's own ladder |
+| `--tracking-*` | `label` `display` `action` `brand` `eyebrow` | Tailwind's widest is `0.1em`, far too tight for uppercase Cinzel |
+| `--text-shadow-*` `--shadow-*` `--drop-shadow-*` | `glow` `glow-soft` `glow-strong` | `color-mix` over `--accent-gold`, so they follow a `[data-accent]` swap |
+| `--container-*` | `page` `reading` | the prototype's two column widths |
+
+**Two rules that keep it consistent.** A raw colour or an off-ladder size in a component is a missing token — add it here, with a name that says its role, not its pixel value. And a treatment worn by more than one component is a component, not an exported class string: `NavLink` is the bar's link rule, and it is what lets `aria-current` alone light up the reader's current page. Both are what `cn` + CVA + `asChild` are for; both keep the styling on the element, where Tailwind can be read.
+
 **Dark-only.** This is a night-themed poetry site; a light mode is meaningless. Put the gothic values directly in `:root` and skip the `.dark` class convention entirely rather than duplicating every token. The four accent variants at [styles.css:937-955](../prototype/styles.css#L937-L955) survive as `[data-accent="crimson"]` blocks that override `--primary` / `--ring` / `--border`.
 
 **What stays hand-written CSS.** Tailwind utilities can't express these cleanly, and they belong in `globals.css`: the SVG noise texture and vignette on `body::before/after` ([styles.css:49-68](../prototype/styles.css#L49-L68)), the ember keyframes driven by the `--drift` custom property, and the `@font-face` / type scale.

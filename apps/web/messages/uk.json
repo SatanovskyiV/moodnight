@@ -1,0 +1,23 @@
+{
+  "metadata": {
+    "title": "MoodNight",
+    "description": "Тиха сцена для темної поезії"
+  },
+  "nav": {
+    "label": "Головна навігація",
+    "home": "MoodNight — на головну",
+    "feed": "Стрічка",
+    "authors": "Автори",
+    "collections": "Збірки",
+    "about": "Про нас",
+    "signIn": "Увійти"
+  },
+  "localeSwitcher": {
+    "label": "Мова"
+  },
+  "home": {
+    "phase": "Phase 1",
+    "title": "MoodNight",
+    "tagline": "Каркас зібрано. Тема, шрифти й токени на місці — поезія попереду."
+  }
+}
