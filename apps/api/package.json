@@ -12,6 +12,7 @@
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
+    "@moodnight/db": "workspace:*",
     "@moodnight/shared": "workspace:*",
     "@nestjs/common": "^11.1.28",
     "@nestjs/config": "^4.0.4",

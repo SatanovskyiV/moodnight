@@ -2,6 +2,8 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalEnv": ["NODE_ENV"],
+  "//": "Turbo runs tasks in strict env mode: a variable not named here is invisible to them. Connection strings go in passThrough rather than globalEnv because they must not become part of a cache key — the build output does not depend on which database it will talk to, and secrets do not belong in a hash.",
+  "globalPassThroughEnv": ["DATABASE_URL", "DIRECT_URL", "SHADOW_DATABASE_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .next/
+# The Prisma client is generated from prisma/schema.prisma on install and build.
+packages/db/src/generated/
 .turbo/
 next-env.d.ts
 *.tsbuildinfo

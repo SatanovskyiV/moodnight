@@ -3,6 +3,7 @@ dist
 .next
 .turbo
 pnpm-lock.yaml
+packages/db/src/generated
 
 # The original prototype and the roadmap are the reference the port is checked
 # against — reformatting them would only add noise to every diff.

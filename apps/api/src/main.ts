@@ -21,6 +21,11 @@ async function bootstrap() {
   // @moodnight/shared (a ZodValidationPipe lands in Phase 3, when there are
   // request bodies), so class-validator never enters the dependency tree.
 
+  // Without this, SIGTERM kills the process before `onModuleDestroy` runs and
+  // the database connections are dropped rather than closed — noticeable in
+  // local dev, where every watch restart would otherwise leak a pool.
+  app.enableShutdownHooks();
+
   await app.listen(process.env.PORT ?? 3001);
   Logger.log(`API listening on ${await app.getUrl()}`, "Bootstrap");
 }

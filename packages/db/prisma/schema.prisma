@@ -1,0 +1,36 @@
+// MoodNight's database schema.
+//
+// The models land here phase by phase (docs/ROADMAP.md, "Data model") — this
+// file currently carries only the two blocks every model will depend on, so the
+// connection, the generated client and the migration workflow can be set up and
+// proven before the first table exists.
+//
+// Everything about *where* the database is lives in prisma.config.ts and the
+// environment, never here: this file is committed and shared, connection
+// strings are neither.
+
+generator client {
+  // Prisma 7's generator. It emits TypeScript into the package's own source
+  // tree, so this package's `tsc` compiles the client together with src/ and
+  // ships one consistent build in dist/ — no second toolchain, no runtime
+  // dependency on files inside node_modules.
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+
+  // The client only ever runs inside the NestJS function and local scripts.
+  // Next.js never imports it: the read path is ISR-cached and talks to the API
+  // over HTTP, so no edge or browser build of the client is needed.
+  runtime = "nodejs"
+
+  // Match the package's CommonJS output — apps/api compiles to CJS too.
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  // The provider is all this block holds now. Prisma 7 rejects `url` and
+  // `directUrl` here: the application connects through the driver adapter in
+  // src/client.ts, and the CLI reads its own connection string from
+  // prisma.config.ts. Neither of them is a value that belongs in a committed
+  // file, which is exactly why the block shrank.
+  provider = "postgresql"
+}
