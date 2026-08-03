@@ -1,13 +1,13 @@
 # MoodNight — from prototype to product
 
 > **Status:** planning complete, Phase 1 not started · **Last updated:** 2026-08-03
-> Links to `../*.jsx` / `../styles.css` refer to the original prototype files, which Phase 1 replaces.
+> Links to `../prototype/*` refer to the original prototype files, which Phase 1 replaces.
 
 ## Context
 
-Today MoodNight is a 2,000-line static prototype: [MoodNight.html](../MoodNight.html) loads React 18 + Babel-standalone from a CDN and compiles four `.jsx` files in the browser. All data lives in [data.jsx](../data.jsx) as three hardcoded poems; reactions increment in `useState` and vanish on reload; the auth form in [app.jsx:243](../app.jsx#L243) calls `e.preventDefault()` and does nothing.
+Today MoodNight is a 2,000-line static prototype: [MoodNight.html](../prototype/MoodNight.html) loads React 18 + Babel-standalone from a CDN and compiles four `.jsx` files in the browser. All data lives in [data.jsx](../prototype/data.jsx) as three hardcoded poems; reactions increment in `useState` and vanish on reload; the auth form in [app.jsx:243](../prototype/app.jsx#L243) calls `e.preventDefault()` and does nothing.
 
-The design is the valuable part and it is finished — [styles.css](../styles.css) is 964 lines of hand-written gothic CSS with a coherent token system, and [ornaments.jsx](../ornaments.jsx) is an original SVG glyph set. None of that gets thrown away. What's missing is everything behind it: persistence, identity, publishing.
+The design is the valuable part and it is finished — [styles.css](../prototype/styles.css) is 964 lines of hand-written gothic CSS with a coherent token system, and [ornaments.jsx](../prototype/ornaments.jsx) is an original SVG glyph set. None of that gets thrown away. What's missing is everything behind it: persistence, identity, publishing.
 
 The goal is a real site for a small Ukrainian poetry group — non-commercial, no ads, no payments — built in small deployable steps and running at **$0/month**.
 
@@ -22,7 +22,7 @@ The goal is a real site for a small Ukrainian poetry group — non-commercial, n
 | Auth | NestJS-owned (Passport JWT + httpOnly refresh cookie) | Auth.js couples to the Next.js runtime and fights a separate backend |
 | Repo | pnpm workspaces + Turborepo | pnpm 10.33 and Node 24.12 already installed locally |
 | Styling | Tailwind v4.3 + shadcn/ui | Radix a11y under the hood; pays for itself on the Phase 3 forms and Phase 4 moderation queue |
-| Fonts | `next/font` | Replaces the render-blocking Google Fonts `<link>` in [MoodNight.html:10](../MoodNight.html#L10) |
+| Fonts | `next/font` | Replaces the render-blocking Google Fonts `<link>` in [MoodNight.html:10](../prototype/MoodNight.html#L10) |
 | Media | Cloudflare R2 (Phase 6) | 10 GB free, zero egress fees |
 | Email | Resend free tier | Needed from Phase 3 for verification + moderation notices |
 
@@ -58,11 +58,11 @@ components/
                  hero, poem-card, divider, ornaments, embers, drop-cap
 ```
 
-**Nothing is added ahead of need.** `shadcn add` is a per-component command precisely so you pull in `table` the day you build the moderation queue, not before. Each phase below lists the components it introduces; Phase 1 needs three. The same applies to the CSS port — a phase translates only the rules its screens actually use, so [styles.css](../styles.css) drains gradually rather than in one sitting and stays the reference until it is empty.
+**Nothing is added ahead of need.** `shadcn add` is a per-component command precisely so you pull in `table` the day you build the moderation queue, not before. Each phase below lists the components it introduces; Phase 1 needs three. The same applies to the CSS port — a phase translates only the rules its screens actually use, so [styles.css](../prototype/styles.css) drains gradually rather than in one sitting and stays the reference until it is empty.
 
-`PoemCard` does **not** become shadcn's `<Card>`. Its corner frames at [styles.css:530-542](../styles.css#L530-L542), the drop cap, and the poetry type scale are the product's identity — they get built as bespoke components using Tailwind utilities.
+`PoemCard` does **not** become shadcn's `<Card>`. Its corner frames at [styles.css:530-542](../prototype/styles.css#L530-L542), the drop cap, and the poetry type scale are the product's identity — they get built as bespoke components using Tailwind utilities.
 
-**Token mapping.** The prototype's palette at [styles.css:3-21](../styles.css#L3-L21) maps cleanly onto shadcn's variable contract, defined in `:root` and exposed through `@theme inline`:
+**Token mapping.** The prototype's palette at [styles.css:3-21](../prototype/styles.css#L3-L21) maps cleanly onto shadcn's variable contract, defined in `:root` and exposed through `@theme inline`:
 
 | Prototype | shadcn | |
 |---|---|---|
@@ -79,11 +79,11 @@ components/
 
 ⚠️ **Naming collision worth getting right up front:** the prototype's `--accent` is the gold brand colour and must map to shadcn's **`--primary`**. shadcn's own `--accent` means something different — hover/interactive state. Mapping gold onto `--accent` will make every shadcn component look wrong.
 
-**Dark-only.** This is a night-themed poetry site; a light mode is meaningless. Put the gothic values directly in `:root` and skip the `.dark` class convention entirely rather than duplicating every token. The four accent variants at [styles.css:937-955](../styles.css#L937-L955) survive as `[data-accent="crimson"]` blocks that override `--primary` / `--ring` / `--border`.
+**Dark-only.** This is a night-themed poetry site; a light mode is meaningless. Put the gothic values directly in `:root` and skip the `.dark` class convention entirely rather than duplicating every token. The four accent variants at [styles.css:937-955](../prototype/styles.css#L937-L955) survive as `[data-accent="crimson"]` blocks that override `--primary` / `--ring` / `--border`.
 
-**What stays hand-written CSS.** Tailwind utilities can't express these cleanly, and they belong in `globals.css`: the SVG noise texture and vignette on `body::before/after` ([styles.css:49-68](../styles.css#L49-L68)), the ember keyframes driven by the `--drift` custom property, and the `@font-face` / type scale.
+**What stays hand-written CSS.** Tailwind utilities can't express these cleanly, and they belong in `globals.css`: the SVG noise texture and vignette on `body::before/after` ([styles.css:49-68](../prototype/styles.css#L49-L68)), the ember keyframes driven by the `--drift` custom property, and the `@font-face` / type scale.
 
-**Gothic buttons.** Rather than keeping a parallel `.btn`, rewrite the CVA variants inside `components/ui/button.tsx` to encode the gothic styles from [styles.css:231-283](../styles.css#L231-L283). You keep shadcn's API, `asChild`, and focus handling while the look stays yours — this is exactly what shadcn's copy-in-rather-than-install model is for.
+**Gothic buttons.** Rather than keeping a parallel `.btn`, rewrite the CVA variants inside `components/ui/button.tsx` to encode the gothic styles from [styles.css:231-283](../prototype/styles.css#L231-L283). You keep shadcn's API, `asChild`, and focus handling while the look stays yours — this is exactly what shadcn's copy-in-rather-than-install model is for.
 
 ## Data model (Phase 2 onward)
 
@@ -110,15 +110,15 @@ Pure plumbing. Nothing here talks to a database; the point is a green pipeline f
    **shadcn components this phase: `button`, `input`, `label`.** That is the whole set the existing landing page needs. Everything else waits.
 
    Then port the prototype:
-   - **Theme first, before any component.** Translate [styles.css:3-21](../styles.css#L3-L21) into `:root` + `@theme inline` per the mapping above, converting to OKLCH — Tailwind v4 and shadcn both default to it. This is the one piece worth doing completely up front: get it right and every component added in any later phase arrives gothic with no extra work.
+   - **Theme first, before any component.** Translate [styles.css:3-21](../prototype/styles.css#L3-L21) into `:root` + `@theme inline` per the mapping above, converting to OKLCH — Tailwind v4 and shadcn both default to it. This is the one piece worth doing completely up front: get it right and every component added in any later phase arrives gothic with no extra work.
    - `ornaments.jsx` → `components/editorial/ornaments.tsx`, typed, dropping the `window.*` exports at the bottom.
    - `app.jsx` → `components/editorial/{hero,poem-card,divider,embers}.tsx` + `components/{top-nav,featured-feed,footer}.tsx`. Server Components by default; `PoemCard`, `Embers`, `AuthSection` need `"use client"`.
    - Rewrite `components/ui/button.tsx` CVA variants with the gothic button styles.
-   - Rebuild the auth form in [app.jsx:243](../app.jsx#L243) with plain `Input` + `Label`. No `form` component yet — it stays non-functional markup until Phase 3 brings react-hook-form.
+   - Rebuild the auth form in [app.jsx:243](../prototype/app.jsx#L243) with plain `Input` + `Label`. No `form` component yet — it stays non-functional markup until Phase 3 brings react-hook-form.
    - Google Fonts `<link>` → `next/font/google` (Cinzel, Cormorant Garamond, IM Fell English SC, UnifrakturMaguntia) with the Cyrillic subset.
-   - Port only the CSS these screens use — hero, poem card, divider, embers, nav, footer, auth card. Skip the `[data-density]` and `[data-type-pair]` variant blocks at [styles.css:910-935](../styles.css#L910-L935); with the tweaks panel gone nothing toggles them, and they can come back if a theme switcher ever ships.
-   - **Drop the tweaks panel.** [tweaks-panel.jsx](../tweaks-panel.jsx) is 425 lines of design-exploration tooling. Bake in the resolved defaults from [app.jsx:5-12](../app.jsx#L5-L12) — accent `gold`, type `ornate`, density `spacious`, texture and embers on — and delete the panel.
-3. **`apps/api`** — NestJS 11 with `GET /health` and `GET /poems`, the latter returning the three poems from [data.jsx](../data.jsx) moved into `packages/shared` as typed fixtures.
+   - Port only the CSS these screens use — hero, poem card, divider, embers, nav, footer, auth card. Skip the `[data-density]` and `[data-type-pair]` variant blocks at [styles.css:910-935](../prototype/styles.css#L910-L935); with the tweaks panel gone nothing toggles them, and they can come back if a theme switcher ever ships.
+   - **Drop the tweaks panel.** [tweaks-panel.jsx](../prototype/tweaks-panel.jsx) is 425 lines of design-exploration tooling. Bake in the resolved defaults from [app.jsx:5-12](../prototype/app.jsx#L5-L12) — accent `gold`, type `ornate`, density `spacious`, texture and embers on — and delete the panel.
+3. **`apps/api`** — NestJS 11 with `GET /health` and `GET /poems`, the latter returning the three poems from [data.jsx](../prototype/data.jsx) moved into `packages/shared` as typed fixtures.
 4. **`packages/shared`** — `Poem`/`Author` types and zod schemas, imported by both apps.
 5. **Wire it end-to-end** — the Next.js feed fetches from the NestJS `/poems` endpoint rather than importing the fixtures directly. The data is still hardcoded, but the integration, CORS, and env-var plumbing are real and proven.
 6. **CI** — GitHub Actions: lint, typecheck, test, build on PR.
@@ -136,7 +136,7 @@ Each phase ships and deploys on its own. The shadcn line is everything that phas
   *shadcn: `form`, `sonner` (toasts), `dropdown-menu` (user menu).*
 - **Phase 4 — Writing + moderation.** Poem editor, `/me/poems` dashboard, `DRAFT → PENDING_REVIEW → PUBLISHED|REJECTED` transitions, `/admin/queue` for editors, `Review` audit trail, notification emails. This is where shadcn earns its place — the queue is a real data table and none of it gets hand-built.
   *shadcn: `table` (+ TanStack Table), `dialog`, `alert-dialog`, `textarea`, `select`, `tabs`.*
-- **Phase 5 — Engagement.** Persist Kindle/Lament (one per user per kind, replacing the local `useState` at [app.jsx:177](../app.jsx#L177)), read counting, collections, author profiles, search.
+- **Phase 5 — Engagement.** Persist Kindle/Lament (one per user per kind, replacing the local `useState` at [app.jsx:177](../prototype/app.jsx#L177)), read counting, collections, author profiles, search.
   *shadcn: `tooltip`, `popover`, `command` (search).*
 - **Phase 6 — Ops.** R2 for avatars and covers, OG images, sitemap, RSS, rate limiting, **scheduled `pg_dump` to R2** — Neon's free tier keeps only ~24h of history, and this archive is irreplaceable.
 
@@ -151,7 +151,7 @@ curl localhost:3001/poems         # the three seeded poems
 pnpm lint && pnpm typecheck && pnpm build
 ```
 
-Then run the existing prototype side by side (`python3 -m http.server 8777` → `MoodNight.html`) and compare at 375 px, 768 px and 1440 px: hero, poem cards with corner frames, dividers, embers drifting, parchment texture, vignette, drop caps, button gradients and letter-spacing. Because Phase 1 re-implements rather than copies, treat any difference as a bug and fix it before moving on.
+Then run the existing prototype side by side (`python3 -m http.server 8777` → `/prototype/MoodNight.html`) and compare at 375 px, 768 px and 1440 px: hero, poem cards with corner frames, dividers, embers drifting, parchment texture, vignette, drop caps, button gradients and letter-spacing. Because Phase 1 re-implements rather than copies, treat any difference as a bug and fix it before moving on.
 
 Finally confirm the deployed web URL renders poems fetched from the deployed API URL, and that a PR produces working preview deployments for both projects.
 

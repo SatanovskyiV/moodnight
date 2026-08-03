@@ -1,0 +1,33 @@
+{
+  "name": "moodnight",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,css,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,css,md}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.8",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.65.0",
+    "prettier-plugin-tailwindcss": "^0.8.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "unrs-resolver",
+      "@tailwindcss/oxide"
+    ]
+  }
+}

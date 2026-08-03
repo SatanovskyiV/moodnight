@@ -1,0 +1,192 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ==========================================================================
+   MoodNight theme
+   Ported from the :root block of prototype/styles.css (lines 3-21), converted
+   to OKLCH — the format Tailwind v4 and shadcn both default to.
+
+   Dark-only by design: this is a night-themed poetry site, so the gothic
+   values live directly in :root and there is no `.dark` class to duplicate.
+   ========================================================================== */
+
+:root {
+  /* --- Prototype palette, verbatim in intent, OKLCH in form --- */
+  --ink: oklch(13.567% 0.009 82.51); /* #0a0805 */
+  --ink-2: oklch(17.588% 0.0135 77.72); /* #14100a */
+  --ink-3: oklch(20.541% 0.015 66.83); /* #1c1610 */
+  --parchment: oklch(89.68% 0.0395 87.57); /* #e8dcc0 */
+  --parchment-dim: oklch(73.773% 0.0559 89.48); /* #b8a982 */
+  --parchment-faint: oklch(49.797% 0.0422 84.35); /* #6e6147 */
+  --accent-gold: oklch(73.478% 0.1021 82.33); /* #c9a35a — brand gold */
+  --accent-bright: oklch(82.539% 0.1004 82.53); /* #e6c078 */
+  --accent-deep: oklch(50.393% 0.0633 74.27); /* #7a5f3a */
+  --ember: oklch(67.366% 0.1412 51.76); /* #d97a3a */
+  --blood: oklch(32.159% 0.0942 24.09); /* #5a1a1a */
+
+  --shadow-deep: 0 30px 80px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 40px rgba(201, 163, 90, 0.18);
+
+  --texture-opacity: 0.06;
+  --ornament-density: 1;
+
+  /* --- shadcn variable contract ---
+     NOTE the deliberate split: the prototype's `--accent` (gold) becomes
+     shadcn's `--primary`. shadcn's own `--accent` means hover/interactive
+     surface and stays a lifted ink — mapping gold onto it makes every
+     shadcn component look wrong. */
+  --background: var(--ink);
+  --foreground: var(--parchment);
+
+  --card: var(--ink-2);
+  --card-foreground: var(--parchment);
+  --popover: var(--ink-2);
+  --popover-foreground: var(--parchment);
+
+  --primary: var(--accent-gold);
+  --primary-foreground: var(--ink);
+
+  --secondary: var(--ink-3);
+  --secondary-foreground: var(--parchment);
+  --muted: var(--ink-3);
+  --muted-foreground: var(--parchment-dim);
+
+  --accent: oklch(24.5% 0.018 70); /* hover/interactive surface — not brand gold */
+  --accent-foreground: var(--parchment);
+
+  --destructive: var(--blood);
+  --destructive-foreground: var(--parchment);
+
+  --border: var(--accent-deep);
+  --input: var(--accent-deep);
+  --ring: var(--accent-bright);
+
+  --radius: 0.125rem; /* the prototype is near-square; gothic frames, not pills */
+
+  --chart-1: var(--accent-gold);
+  --chart-2: var(--ember);
+  --chart-3: var(--parchment-dim);
+  --chart-4: var(--blood);
+  --chart-5: var(--accent-deep);
+}
+
+/* Accent variants from prototype/styles.css:937-955. The tweaks panel that toggled
+   these is gone; they survive as data attributes for a future theme switcher. */
+[data-accent="crimson"] {
+  --accent-gold: oklch(54.065% 0.136 29.05); /* #b04a3e */
+  --accent-bright: oklch(68.067% 0.1215 30.6); /* #d97a6a */
+  --accent-deep: oklch(32.159% 0.0942 24.09); /* #5a1a1a */
+  --ember: oklch(67.366% 0.1412 51.76); /* #d97a3a */
+}
+
+[data-accent="moss"] {
+  --accent-gold: oklch(68.978% 0.0681 134.1); /* #8aa57a */
+  --accent-bright: oklch(80.945% 0.053 129.22); /* #b6c8a4 */
+  --accent-deep: oklch(39.226% 0.0362 133.1); /* #3e4a36 */
+  --ember: oklch(73.478% 0.1021 82.33); /* #c9a35a */
+}
+
+[data-accent="ivory"] {
+  --accent-gold: oklch(83.594% 0.0561 88.8); /* #d8c8a0 */
+  --accent-bright: oklch(90.958% 0.0552 88.81); /* #f0e0b8 */
+  --accent-deep: oklch(49.797% 0.0422 84.35); /* #6e6147 */
+  --ember: oklch(83.594% 0.0561 88.8); /* #d8c8a0 */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* MoodNight extras — no shadcn equivalent, so registered explicitly */
+  --color-ember: var(--ember);
+  --color-parchment-dim: var(--parchment-dim);
+  --color-parchment-faint: var(--parchment-faint);
+  --color-primary-bright: var(--accent-bright);
+  --color-primary-deep: var(--accent-deep);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Font families are supplied by next/font in layout.tsx */
+  --font-display: var(--font-cinzel), "Times New Roman", serif;
+  --font-body: var(--font-cormorant), "Times New Roman", serif;
+  --font-caps: var(--font-im-fell), "Cinzel", serif;
+  --font-blackletter: var(--font-unifraktur), "Cinzel", serif;
+  --font-sans: var(--font-cormorant), "Times New Roman", serif;
+  --font-serif: var(--font-cormorant), "Times New Roman", serif;
+
+  --shadow-deep: var(--shadow-deep);
+  --shadow-glow: var(--shadow-glow);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    font-size: 18px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Hand-written on purpose — Tailwind utilities cannot express the layered
+     radial gradients, the SVG noise texture, or the vignette (prototype/styles.css:38-68). */
+  body {
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(122, 95, 58, 0.18) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(90, 26, 26, 0.1) 0%, transparent 60%), var(--ink);
+    min-height: 100vh;
+    position: relative;
+  }
+
+  /* Parchment paper noise overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    opacity: var(--texture-opacity);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.95  0 0 0 0 0.85  0 0 0 0 0.6  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    mix-blend-mode: overlay;
+  }
+
+  /* Vignette */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 0.7) 100%);
+  }
+}
