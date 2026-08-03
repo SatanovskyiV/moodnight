@@ -1,0 +1,23 @@
+import "reflect-metadata";
+
+import { Logger } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
+
+import { AppModule } from "./app.module";
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+
+  app.enableCors({
+    origin: (process.env.CORS_ORIGINS ?? "http://localhost:3000").split(","),
+    credentials: true,
+  });
+  // No global ValidationPipe: validation goes through the zod schemas in
+  // @moodnight/shared (a ZodValidationPipe lands in Phase 3, when there are
+  // request bodies), so class-validator never enters the dependency tree.
+
+  await app.listen(process.env.PORT ?? 3001);
+  Logger.log(`API listening on ${await app.getUrl()}`, "Bootstrap");
+}
+
+void bootstrap();
