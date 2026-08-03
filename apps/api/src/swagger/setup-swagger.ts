@@ -6,14 +6,26 @@ import { buildComponentSchemas } from "./openapi-schemas";
 const DOCS_PATH = "docs";
 
 /**
+ * Kept in step with the `swagger-ui-dist` version @nestjs/swagger resolves to.
+ * A mismatch here is silent — the UI renders against a different release than
+ * the one in node_modules — so bump it when @nestjs/swagger moves.
+ */
+const SWAGGER_UI_VERSION = "5.32.8";
+const SWAGGER_UI_CDN = `https://cdn.jsdelivr.net/npm/swagger-ui-dist@${SWAGGER_UI_VERSION}`;
+
+/**
  * Mounts Swagger UI at `/docs`, with the raw document at `/docs/json` (and
  * `/docs/yaml`) so a typed client can be generated from it later.
  *
- * Note for the Vercel deploy: the UI's static assets are served by the
- * function itself, which serverless runtimes occasionally mangle. If the page
- * ever loads unstyled in production, point `customCssUrl`/`customJsUrl` at a
- * CDN copy of swagger-ui-dist, or set `SWAGGER_ENABLED=false` there and read
- * the docs locally — `/docs/json` is plain JSON and always works.
+ * The UI's CSS and JS come from a CDN rather than from the function. Swagger's
+ * HTML template links them as files inside `swagger-ui-dist`, which Vercel's
+ * bundler does not trace into the deployed function, so on Vercel they 404 and
+ * the page dies on `SwaggerUIBundle is not defined`. `customJs` is injected
+ * after Swagger's own `swagger-ui-init.js`, but that file only registers a
+ * `window.onload` handler, so the CDN globals are in place before it runs.
+ *
+ * `/docs/json` is generated in-process and needs none of this — it is the
+ * reliable read if the UI is ever unavailable.
  */
 export function setupSwagger(app: INestApplication): void {
   const config = new DocumentBuilder()
@@ -40,6 +52,11 @@ export function setupSwagger(app: INestApplication): void {
     customSiteTitle: "MoodNight API",
     jsonDocumentUrl: `${DOCS_PATH}/json`,
     yamlDocumentUrl: `${DOCS_PATH}/yaml`,
+    customCssUrl: `${SWAGGER_UI_CDN}/swagger-ui.css`,
+    customJs: [
+      `${SWAGGER_UI_CDN}/swagger-ui-bundle.js`,
+      `${SWAGGER_UI_CDN}/swagger-ui-standalone-preset.js`,
+    ],
     swaggerOptions: {
       persistAuthorization: true,
       tagsSorter: "alpha",
