@@ -1,4 +1,4 @@
-import { healthSchema } from "@moodnight/shared";
+import { healthSchema, userSchema } from "@moodnight/shared";
 import type {
   ReferenceObject,
   SchemaObject,
@@ -14,6 +14,7 @@ import { z } from "zod";
  */
 const openApiSchemas = {
   Health: healthSchema,
+  User: userSchema,
 } satisfies Record<string, z.ZodType>;
 
 export type OpenApiSchemaName = keyof typeof openApiSchemas;
@@ -21,6 +22,11 @@ export type OpenApiSchemaName = keyof typeof openApiSchemas;
 /** `@ApiOkResponse({ schema: zodRef("Health") })` — a `$ref` into the components above. */
 export function zodRef(name: OpenApiSchemaName): ReferenceObject {
   return { $ref: `#/components/schemas/${name}` };
+}
+
+/** The same, for the list endpoints: `@ApiOkResponse({ schema: zodArrayRef("User") })`. */
+export function zodArrayRef(name: OpenApiSchemaName): SchemaObject {
+  return { type: "array", items: zodRef(name) };
 }
 
 /**

@@ -34,3 +34,47 @@ datasource db {
   // file, which is exactly why the block shrank.
   provider = "postgresql"
 }
+
+// Naming convention, set by the first model and followed by every one after
+// it: PascalCase model and camelCase fields on the Prisma side, snake_case
+// tables and columns in Postgres via `@@map` / `@map`. TypeScript and SQL each
+// get to read idiomatically, and neither has to be quoted in psql.
+
+/// What someone is allowed to do, in descending order of privilege. This is the
+/// permission — the decorative title on a profile ("Хранитель слова") is a
+/// separate display field, and only this enum is ever read by a guard.
+enum UserRole {
+  /// Everything an editor can do, plus managing users and roles.
+  ADMIN
+
+  /// Moderates the queue: approves or rejects other people's poems.
+  EDITOR
+
+  /// The default for everyone who registers — writes and publishes their own
+  /// poems, moderates nothing.
+  AUTHOR
+
+  @@map("user_role")
+}
+
+model User {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Login identity, and the only field here that has to be globally unique.
+  /// Stored lowercased by the application — Postgres compares text
+  /// case-sensitively, so `citext` or a lowercasing write path is what makes
+  /// the unique index mean what people expect it to.
+  email String @unique @db.VarChar(320)
+
+  name    String @db.VarChar(100)
+  surname String @db.VarChar(100)
+
+  role UserRole @default(AUTHOR)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Maintained by Prisma on every `update`, not by a database trigger: a row
+  /// changed by hand in psql will not move this.
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("users")
+}
