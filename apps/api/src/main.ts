@@ -4,6 +4,7 @@ import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 
 import { AppModule } from "./app.module";
+import { setupSwagger } from "./swagger/setup-swagger";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,6 +13,10 @@ async function bootstrap() {
     origin: (process.env.CORS_ORIGINS ?? "http://localhost:3000").split(","),
     credentials: true,
   });
+
+  if (process.env.SWAGGER_ENABLED !== "false") {
+    setupSwagger(app);
+  }
   // No global ValidationPipe: validation goes through the zod schemas in
   // @moodnight/shared (a ZodValidationPipe lands in Phase 3, when there are
   // request bodies), so class-validator never enters the dependency tree.

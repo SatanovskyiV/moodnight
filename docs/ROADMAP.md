@@ -118,7 +118,7 @@ Pure plumbing. Nothing here talks to a database; the point is a green pipeline f
    - Google Fonts `<link>` → `next/font/google` (Cinzel, Cormorant Garamond, IM Fell English SC, UnifrakturMaguntia) with the Cyrillic subset.
    - Port only the CSS these screens use — hero, poem card, divider, embers, nav, footer, auth card. Skip the `[data-density]` and `[data-type-pair]` variant blocks at [styles.css:910-935](../prototype/styles.css#L910-L935); with the tweaks panel gone nothing toggles them, and they can come back if a theme switcher ever ships.
    - **Drop the tweaks panel.** [tweaks-panel.jsx](../prototype/tweaks-panel.jsx) is 425 lines of design-exploration tooling. Bake in the resolved defaults from [app.jsx:5-12](../prototype/app.jsx#L5-L12) — accent `gold`, type `ornate`, density `spacious`, texture and embers on — and delete the panel.
-3. **`apps/api`** — NestJS 11 with `GET /health` and `GET /poems`, the latter returning the three poems from [data.jsx](../prototype/data.jsx) moved into `packages/shared` as typed fixtures.
+3. **`apps/api`** — NestJS 11 with `GET /health` and `GET /poems`, the latter returning the three poems from [data.jsx](../prototype/data.jsx) moved into `packages/shared` as typed fixtures. Swagger UI on `/docs`, its components generated from the same shared zod schemas via `z.toJSONSchema` — no parallel DTO classes, and no `@nestjs/swagger` CLI plugin, which only reads class-based DTOs this project does not have.
 4. **`packages/shared`** — `Poem`/`Author` types and zod schemas, imported by both apps.
 5. **Wire it end-to-end** — the Next.js feed fetches from the NestJS `/poems` endpoint rather than importing the fixtures directly. The data is still hardcoded, but the integration, CORS, and env-var plumbing are real and proven.
 6. **CI** — GitHub Actions: lint, typecheck, test, build on PR.
@@ -148,6 +148,7 @@ Phase 1 is verified by inspection against the prototype, not by tests — there 
 pnpm install && pnpm dev          # web :3000, api :3001
 curl localhost:3001/health        # {"status":"ok"}
 curl localhost:3001/poems         # the three seeded poems
+curl localhost:3001/docs/json     # OpenAPI document; UI on /docs
 pnpm lint && pnpm typecheck && pnpm build
 ```
 

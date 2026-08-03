@@ -27,9 +27,12 @@ index.html      GitHub Pages entry → prototype/MoodNight.html
 pnpm install
 pnpm dev                     # web :3000, api :3001
 curl localhost:3001/health   # {"status":"ok","service":"moodnight-api","uptime":…}
+open localhost:3001/docs     # Swagger UI; the raw document is on /docs/json
 ```
 
 Copy `apps/web/.env.example` and `apps/api/.env.example` to `.env.local` / `.env` if you need to change ports or the API URL.
+
+The API documents itself from the zod schemas in `packages/shared` — a schema listed in [openapi-schemas.ts](apps/api/src/swagger/openapi-schemas.ts) becomes an OpenAPI component, and controllers point at it with `zodRef("Name")`. There are no duplicate DTO classes to keep in sync. `SWAGGER_ENABLED=false` hides the docs.
 
 ### Verification
 
