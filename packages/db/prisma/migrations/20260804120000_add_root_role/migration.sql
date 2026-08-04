@@ -1,0 +1,11 @@
+-- AlterEnum
+-- `BEFORE 'ADMIN'` places ROOT at the top of the ladder in Postgres' own sort
+-- order, so `ORDER BY role` lists the enum the way schema.prisma reads and a
+-- future `role >= 'ADMIN'` comparison means what it looks like it means.
+--
+-- This migration adds the value and nothing else, on purpose: Prisma applies
+-- each migration inside a transaction, and Postgres refuses to *use* a new enum
+-- value in the transaction that added it. The index in
+-- 20260804121000_one_root_account names 'ROOT' in a WHERE clause, so it has to
+-- wait for this one to commit.
+ALTER TYPE "user_role" ADD VALUE 'ROOT' BEFORE 'ADMIN';

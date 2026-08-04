@@ -23,7 +23,7 @@ export interface UserRowFixture {
   email: string;
   name: string;
   surname: string;
-  role: "ADMIN" | "EDITOR" | "AUTHOR";
+  role: "ROOT" | "ADMIN" | "EDITOR" | "AUTHOR";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -95,10 +95,27 @@ export type PrismaMock = ReturnType<typeof createPrismaMock>;
  * catch and surface as a 500 — the tests would pass against a fake the code
  * cannot actually recognise. Constructing the real error class is what keeps
  * these assertions honest.
+ *
+ * `target` is the constraint the database rejected the write on, and it is
+ * optional here for a reason: Prisma sets it on a P2002 but not on every error,
+ * and the service has to read a missing one as "the email index" rather than
+ * throwing on `undefined`. Omitting it is therefore a case worth stubbing, not
+ * a shortcut.
+ *
+ * Both shapes are allowed because Prisma reports both — Postgres sends the
+ * index name as a string, other connectors an array of column names — and the
+ * service claims to handle either.
  */
-export function prismaError(code: string): Prisma.PrismaClientKnownRequestError {
+export function prismaError(
+  code: string,
+  target?: string | string[],
+): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError(`Stubbed Prisma failure (${code}).`, {
     code,
     clientVersion: "test",
+    ...(target === undefined ? {} : { meta: { target } }),
   });
 }
+
+/** The partial unique index that allows a single ROOT row. */
+export const ONE_ROOT_INDEX = "users_one_root";

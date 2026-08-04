@@ -1,0 +1,13 @@
+-- CreateIndex
+-- One root account, enforced by the database rather than by the application.
+--
+-- A partial unique index: the uniqueness applies only to the rows matching the
+-- WHERE clause, so a second ROOT is rejected while any number of admins,
+-- editors and authors stay legal. An unfiltered UNIQUE on `role` would allow
+-- exactly one row per role, which is not the rule anyone wants.
+--
+-- Nothing about this is expressible in schema.prisma — Prisma has no syntax for
+-- a filtered index — so it lives here and is described in the comment under the
+-- `User` model. Being an index rather than a service-side check is what makes
+-- it hold when two requests try to create a root at the same moment.
+CREATE UNIQUE INDEX "users_one_root" ON "users"("role") WHERE "role" = 'ROOT';

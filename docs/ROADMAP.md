@@ -100,7 +100,8 @@ components/
 
 ```
 User      id, email, passwordHash, penName, slug, initials, roleTitle,
-          bio, avatarUrl, role: ADMIN|EDITOR|AUTHOR, emailVerifiedAt
+          bio, avatarUrl, role: ROOT|ADMIN|EDITOR|AUTHOR, emailVerifiedAt
+          — at most one ROOT row, by partial unique index
 Poem      id, slug, title, subtitle, body, authorId, readCount,
           status: DRAFT|PENDING_REVIEW|PUBLISHED|REJECTED, publishedAt
 Tag       id, name, slug              PoemTag       poemId, tagId
@@ -109,7 +110,9 @@ Review    poemId, reviewerId, action: APPROVE|REJECT, note, createdAt
 Collection / CollectionPoem            — the "Збірки" nav item
 ```
 
-Two things worth naming carefully: `role` is the permission (`ADMIN|EDITOR|AUTHOR`) while `roleTitle` is the decorative display string from the prototype ("Хранитель слова", "Мандрівний поет"). And `readCount` stays a denormalized counter on `Poem` — do not count rows.
+Two things worth naming carefully: `role` is the permission (`ROOT|ADMIN|EDITOR|AUTHOR`) while `roleTitle` is the decorative display string from the prototype ("Хранитель слова", "Мандрівний поет"). And `readCount` stays a denormalized counter on `Poem` — do not count rows.
+
+`ROOT` is the site owner and a singleton — the database allows one such row and no more. Phase 3's guard is what decides who may *assign* it; the index only guarantees that no two accounts ever hold it at once.
 
 ## Phase 1 — Skeleton (no DB)
 

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   createPrismaMock,
+  ONE_ROOT_INDEX,
   type PrismaMock,
   prismaError,
   USER_ID,
@@ -130,6 +131,39 @@ describe("UsersService", () => {
       prisma.user.create.mockRejectedValue(boom);
 
       await expect(service.create(input)).rejects.toBe(boom);
+    });
+
+    /**
+     * Which of the table's two unique indexes was violated is read out of
+     * `meta.target`, and Prisma does not report it in one shape — Postgres
+     * sends the index name as a string, other connectors an array. The string
+     * form is covered over HTTP in users.controller.spec.ts; the array is
+     * checked here, because nothing about it is visible in a response body.
+     *
+     * Both messages are asserted, not just the root one: a check that matched
+     * too eagerly would answer "there is already a root account" to someone who
+     * merely reused an email, and that reads as a passing test.
+     */
+    it("recognises the single-root index whether the target is a string or an array", async () => {
+      const root = { ...input, role: "ROOT" } as const;
+
+      prisma.user.create.mockRejectedValue(prismaError("P2002", ONE_ROOT_INDEX));
+      await expect(service.create(root)).rejects.toMatchObject({
+        status: 409,
+        message: expect.stringContaining("already a root account"),
+      });
+
+      prisma.user.create.mockRejectedValue(prismaError("P2002", [ONE_ROOT_INDEX]));
+      await expect(service.create(root)).rejects.toMatchObject({
+        status: 409,
+        message: expect.stringContaining("already a root account"),
+      });
+
+      prisma.user.create.mockRejectedValue(prismaError("P2002", ["email"]));
+      await expect(service.create(root)).rejects.toMatchObject({
+        status: 409,
+        message: expect.stringContaining("poet@moodnight.dev already exists"),
+      });
     });
   });
 

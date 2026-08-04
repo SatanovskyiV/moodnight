@@ -10,10 +10,11 @@ import { z } from "zod";
  * rather than re-exporting Prisma's enum: nothing in @moodnight/db belongs in
  * apps/web.
  */
-export const userRoleSchema = z.enum(["ADMIN", "EDITOR", "AUTHOR"]).meta({
+export const userRoleSchema = z.enum(["ROOT", "ADMIN", "EDITOR", "AUTHOR"]).meta({
   description:
-    "What the account is allowed to do. ADMIN manages users, " +
-    "EDITOR moderates the queue, AUTHOR writes their own poems.",
+    "What the account is allowed to do. ROOT is the site's owner and there is " +
+    "at most one of them, ADMIN manages users, EDITOR moderates the queue, " +
+    "AUTHOR writes their own poems.",
   example: "AUTHOR",
 });
 
@@ -60,6 +61,11 @@ export const createUserSchema = userSchema
     // Optional here, with no zod-side default: the column's `@default(AUTHOR)`
     // in packages/db stays the single place the default is written, so there is
     // no second copy of it to fall out of step.
+    //
+    // `ROOT` is accepted by this schema and may still be refused by the server:
+    // "at most one root account" is a rule about the rows already in the table,
+    // which no schema validating a single request can see. It comes back as a
+    // 409, not a 400.
     role: userRoleSchema.optional(),
   })
   .strict()

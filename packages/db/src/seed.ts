@@ -18,8 +18,15 @@ import { createPrismaClient, type Prisma, UserRole } from "./index";
  * Enough users to exercise every role and give `GET /users` something to
  * return. The names are placeholders for a poetry site, not real accounts —
  * there are no passwords here because authentication is Phase 3.
+ *
+ * The root account is the one row here that cannot simply be copied: the
+ * database allows a single ROOT, so if some other email already holds the role
+ * this upsert fails on the `users_one_root` index instead of quietly creating a
+ * second owner. That is the intended outcome — the seed is not the thing that
+ * gets to decide who the owner is on a database that already answered.
  */
 const USERS: Prisma.UserCreateInput[] = [
+  { email: "root@moodnight.dev", name: "Ліна", surname: "Костенко", role: UserRole.ROOT },
   { email: "admin@moodnight.dev", name: "Леся", surname: "Українка", role: UserRole.ADMIN },
   { email: "editor@moodnight.dev", name: "Іван", surname: "Франко", role: UserRole.EDITOR },
   { email: "author@moodnight.dev", name: "Тарас", surname: "Шевченко", role: UserRole.AUTHOR },

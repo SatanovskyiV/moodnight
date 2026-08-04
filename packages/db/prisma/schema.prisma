@@ -44,6 +44,15 @@ datasource db {
 /// permission — the decorative title on a profile ("Хранитель слова") is a
 /// separate display field, and only this enum is ever read by a guard.
 enum UserRole {
+  /// The site's owner: everything an admin can do, and the account that
+  /// answers for the ones an admin should not decide alone.
+  ///
+  /// There is at most one ROOT row, ever, and that is a database rule rather
+  /// than a convention — see the partial unique index below. *Who* may hand the
+  /// role over is a separate question, and it has no answer until Phase 3 puts
+  /// a guard on the users endpoints.
+  ROOT
+
   /// Everything an editor can do, plus managing users and roles.
   ADMIN
 
@@ -69,6 +78,9 @@ model User {
   name    String @db.VarChar(100)
   surname String @db.VarChar(100)
 
+  /// Everyone registers as an AUTHOR; only an explicit write moves an account
+  /// up the ladder. ROOT is the one value this column cannot hold twice — see
+  /// the note under `@@map`.
   role UserRole @default(AUTHOR)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -78,3 +90,21 @@ model User {
 
   @@map("users")
 }
+
+// "At most one ROOT" is enforced by a partial unique index —
+//
+//   CREATE UNIQUE INDEX "users_one_root" ON "users"("role") WHERE "role" = 'ROOT'
+//
+// — created by the 20260804121000_one_root_account migration. A `WHERE` clause
+// has no equivalent in this file: plain `@@unique([role])` would allow one row
+// per role and lock the site to a single author, so the index is written in SQL
+// and this comment is the pointer to it.
+//
+// The cost of living outside the schema: `pnpm db:migrate` diffs the applied
+// migrations against this file, sees an index it cannot express, and may
+// generate a `DROP INDEX "users_one_root"` into the next migration. Delete that
+// line before applying it — the same rule as any other hand-written SQL here.
+//
+// The API still returns a 409 rather than a raw database error (see
+// apps/api/src/users/users.service.ts); the index is what makes that answer
+// true under concurrent writes, where a read-then-write check would not be.

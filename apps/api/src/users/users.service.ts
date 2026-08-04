@@ -25,8 +25,17 @@ const PUBLIC_FIELDS = {
   updatedAt: true,
 } as const;
 
-/** Prisma's code for "a unique constraint rejected this write" — here, always `email`. */
+/** Prisma's code for "a unique constraint rejected this write". */
 const UNIQUE_VIOLATION = "P2002";
+
+/**
+ * The partial unique index that allows a single ROOT row (created by the
+ * 20260804121000_one_root_account migration). Two unique indexes now guard this
+ * table, so a P2002 is no longer self-explanatory: which one Postgres rejected
+ * the write on is the difference between "that email is taken" and "there is
+ * already a root account", and the client deserves the right one.
+ */
+const ONE_ROOT_INDEX = "users_one_root";
 
 /** Prisma's code for "the row this `update` or `delete` targeted does not exist". */
 const RECORD_NOT_FOUND = "P2025";
@@ -62,9 +71,48 @@ function normaliseEmail(email: string): string {
   return email.toLowerCase();
 }
 
-/** Narrow enough to act on: a Prisma failure, and the specific one expected. */
-function isPrismaError(error: unknown, code: string): boolean {
+/**
+ * Narrow enough to act on: a Prisma failure, and the specific one expected.
+ *
+ * A type predicate rather than a plain boolean, so a caller that needs more
+ * than the verdict — {@link violatedRootIndex} reads `meta` — gets the narrowed
+ * error out of the same check instead of asserting the type a second time.
+ */
+function isPrismaError(
+  error: unknown,
+  code: string,
+): error is Prisma.PrismaClientKnownRequestError {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code;
+}
+
+/**
+ * Whether a unique violation came from the single-root index rather than from
+ * the email one.
+ *
+ * Prisma reports the offending constraint in `meta.target`, and not in one
+ * shape: Postgres gives back the index name as a string, other connectors give
+ * an array of column names. Both are flattened to a list before the comparison,
+ * so this asks "does the target name this index" rather than betting on which
+ * form arrives. An unrecognisable target reads as `false`, which lands the
+ * caller on the email message — the older and far likelier of the two.
+ */
+function violatedRootIndex(error: unknown): boolean {
+  if (!isPrismaError(error, UNIQUE_VIOLATION)) {
+    return false;
+  }
+
+  const target = error.meta?.target;
+  const names = Array.isArray(target) ? target.map(String) : [String(target)];
+
+  return names.includes(ONE_ROOT_INDEX);
+}
+
+/** One answer to "there is already a root", shared by `create` and `update`. */
+function rootTaken(): ConflictException {
+  return new ConflictException(
+    "There is already a root account, and there can only be one. " +
+      "Change the existing one's role first if this account is to take it over.",
+  );
 }
 
 /** One answer to "no row has that id", shared by the three routes that take one. */
@@ -119,7 +167,9 @@ export class UsersService {
    * The duplicate email is caught rather than checked for first. A `findUnique`
    * beforehand would still lose the race between the check and the insert, so
    * the unique index is the thing actually enforcing this and the catch is how
-   * its verdict reaches the client.
+   * its verdict reaches the client. The same argument covers `role: "ROOT"`
+   * when a root already exists: two simultaneous requests would both pass a
+   * prior check and only the index can refuse the second insert.
    */
   async create(input: CreateUserInput): Promise<User> {
     const email = normaliseEmail(input.email);
@@ -132,6 +182,10 @@ export class UsersService {
 
       return toUser(user);
     } catch (error) {
+      if (violatedRootIndex(error)) {
+        throw rootTaken();
+      }
+
       if (isPrismaError(error, UNIQUE_VIOLATION)) {
         throw new ConflictException(`A user with the email ${email} already exists.`);
       }
@@ -146,6 +200,11 @@ export class UsersService {
    *
    * The schema guarantees at least one key, so this never issues an update that
    * changes nothing but `updatedAt`.
+   *
+   * Promoting someone to `ROOT` goes through here, and is refused with a 409
+   * while another account holds it. Demoting the current root is an ordinary
+   * `role` change — which is what makes the promotion recoverable rather than a
+   * decision the first seed makes permanently.
    */
   async update(id: string, patch: UpdateUserInput): Promise<User> {
     const data = patch.email ? { ...patch, email: normaliseEmail(patch.email) } : patch;
@@ -161,6 +220,10 @@ export class UsersService {
     } catch (error) {
       if (isPrismaError(error, RECORD_NOT_FOUND)) {
         throw noSuchUser(id);
+      }
+
+      if (violatedRootIndex(error)) {
+        throw rootTaken();
       }
 
       if (isPrismaError(error, UNIQUE_VIOLATION)) {

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { PrismaService } from "../prisma/prisma.service";
 import {
   createPrismaMock,
+  ONE_ROOT_INDEX,
   OTHER_USER_ID,
   type PrismaMock,
   prismaError,
@@ -209,6 +210,35 @@ describe("Users endpoints", () => {
         "A user with the email new.poet@moodnight.dev already exists.",
       );
     });
+
+    // ROOT is a legal value in the schema, so the request gets as far as the
+    // database and comes back refused by the single-root index. The message has
+    // to say which of the two unique indexes rejected it — a client told "that
+    // email is taken" about an address nobody has would have nothing to act on.
+    it("409s about the root account when a second one is created", async () => {
+      prisma.user.create.mockRejectedValue(prismaError("P2002", ONE_ROOT_INDEX));
+
+      const response = await http()
+        .post("/users")
+        .send({ ...body, role: "ROOT" })
+        .expect(409);
+
+      expect(response.body.message).toContain("already a root account");
+    });
+
+    it("passes ROOT through to the database rather than rejecting it up front", async () => {
+      prisma.user.create.mockResolvedValue(userRow({ role: "ROOT" }));
+
+      const response = await http()
+        .post("/users")
+        .send({ ...body, role: "ROOT" })
+        .expect(201);
+
+      expect(response.body.role).toBe("ROOT");
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ role: "ROOT" }) }),
+      );
+    });
   });
 
   describe("PATCH /users/:id", () => {
@@ -277,6 +307,14 @@ describe("Users endpoints", () => {
       expect(response.body.message).toBe(
         "A user with the email taken@moodnight.dev already exists.",
       );
+    });
+
+    it("409s when promoting an account to ROOT while one already holds it", async () => {
+      prisma.user.update.mockRejectedValue(prismaError("P2002", ONE_ROOT_INDEX));
+
+      const response = await http().patch(`/users/${USER_ID}`).send({ role: "ROOT" }).expect(409);
+
+      expect(response.body.message).toContain("already a root account");
     });
   });
 

@@ -52,10 +52,11 @@ export class UsersController {
    *
    * That is a real hole while it lasts, and a wider one now than when this was
    * read-only: the reads hand out email addresses, and `POST` accepts a `role`,
-   * so anything that can reach the API can mint itself an `ADMIN`. Phase 3's
-   * roles guard belongs on the whole controller — read for editors and above,
-   * write for admins — and until it exists this API is not one to expose
-   * publicly.
+   * so anything that can reach the API can mint itself an `ADMIN` — or delete
+   * the root account and claim the role, since only its uniqueness is enforced
+   * and not who may take it. Phase 3's roles guard belongs on the whole
+   * controller — read for editors and above, write for admins, `ROOT` reserved
+   * to the root — and until it exists this API is not one to expose publicly.
    */
   @Get()
   @ApiOperation({
@@ -89,12 +90,13 @@ export class UsersController {
     summary: "Create a user",
     description:
       "Emails are stored lowercased and must be unique. " +
-      "`role` may be omitted, in which case the account is an AUTHOR.",
+      "`role` may be omitted, in which case the account is an AUTHOR. " +
+      "ROOT is a singleton: creating a second one is a 409.",
   })
   @ApiBody({ schema: zodRef("CreateUser") })
   @ApiCreatedResponse({ description: "The created user.", schema: zodRef("User") })
   @ApiBadRequestResponse({ description: "The body does not match the schema." })
-  @ApiConflictResponse({ description: "That email is already taken." })
+  @ApiConflictResponse({ description: "That email is taken, or a root account already exists." })
   create(@Body(new ZodValidationPipe(createUserSchema)) input: CreateUserInput): Promise<User> {
     return this.users.create(input);
   }
@@ -104,14 +106,15 @@ export class UsersController {
     summary: "Update a user",
     description:
       "Changes only the fields present in the body; at least one is required. " +
-      "Ids and timestamps are not writable.",
+      "Ids and timestamps are not writable. Promoting an account to ROOT " +
+      "requires that no other account holds it.",
   })
   @ApiParam({ name: "id", format: "uuid", description: "The user's id." })
   @ApiBody({ schema: zodRef("UpdateUser") })
   @ApiOkResponse({ description: "The updated user.", schema: zodRef("User") })
   @ApiBadRequestResponse({ description: "The id or the body does not match the schema." })
   @ApiNotFoundResponse({ description: "No user has that id." })
-  @ApiConflictResponse({ description: "That email is already taken." })
+  @ApiConflictResponse({ description: "That email is taken, or a root account already exists." })
   update(
     @Param("id", UUID_PARAM) id: string,
     @Body(new ZodValidationPipe(updateUserSchema)) patch: UpdateUserInput,

@@ -37,7 +37,7 @@ The API documents itself from the zod schemas in `packages/shared` — a schema 
 
 The same schemas validate what comes in: a write endpoint applies [`ZodValidationPipe`](apps/api/src/common/zod-validation.pipe.ts) to its `@Body`, so the shape Swagger documents is the shape the route enforces, and a rejected request comes back as `{ statusCode, error, message: [...] }` — the shape Nest's own `ValidationPipe` produces.
 
-**None of the routes are authenticated yet** — Phase 3 brings the roles guard they need. `GET /users` hands out email addresses and `POST /users` accepts a `role`, so this is not an API to expose publicly before then.
+**None of the routes are authenticated yet** — Phase 3 brings the roles guard they need. `GET /users` hands out email addresses and `POST /users` accepts a `role`, so this is not an API to expose publicly before then. The single-root rule below is a rule about *how many* root accounts exist, not about who may become one; the second half is the guard's job.
 
 ### The database
 
@@ -48,7 +48,7 @@ Postgres via Prisma 7, all of it in `packages/db`. Nothing else in the repo talk
 ```bash
 pnpm db:up                    # start Postgres, wait until it accepts connections
 pnpm db:migrate               # apply the migrations
-pnpm db:seed                  # a few users, one per role
+pnpm db:seed                  # a few users, one per role — including the root
 pnpm dev
 ```
 
@@ -74,7 +74,13 @@ pnpm db:deploy                # apply pending migrations — production only, ne
 
 **The seed** is [packages/db/src/seed.ts](packages/db/src/seed.ts), every row an `upsert` on a natural key so re-running it is always safe. `prisma migrate reset` runs it automatically, which is what makes `pnpm db:reset` a one-command return to a known state.
 
+**Roles** are `ROOT | ADMIN | EDITOR | AUTHOR`, in descending order of privilege, and everyone registers as an `AUTHOR`. `ROOT` is the site owner and **there is at most one of them** — enforced by a partial unique index, `users_one_root`, created in [20260804121000_one_root_account](packages/db/prisma/migrations/20260804121000_one_root_account/migration.sql). Creating or promoting a second root is a 409 from the API, and a rejected write from anything talking to Postgres directly. The role can still be handed over: demote the current root, then promote the next one.
+
+That index is the one thing in the schema that Prisma cannot express — there is no syntax for a filtered index — so it lives only in the migration. **If `pnpm db:migrate` ever generates a `DROP INDEX "users_one_root"`, delete that line before applying the migration.** It is the standard cost of a database feature Prisma does not model, and the comment under the `User` model says so too.
+
 **Changing the schema** means editing [packages/db/prisma/schema.prisma](packages/db/prisma/schema.prisma) and running `pnpm db:migrate`, which writes the SQL to `packages/db/prisma/migrations/` — committed, reviewed like any other code, and applied in order everywhere else with `pnpm db:deploy`. The SQL is never edited after it has been applied anywhere; a mistake is corrected by a new migration.
+
+Two of those migrations do one thing each for a reason: Postgres will not let a transaction use an enum value that the same transaction added, and Prisma runs every migration in a transaction, so `ROOT` is added in one migration and first used by the index in the next.
 
 The generated client is **not** committed. It is rebuilt from the schema on every install and every build, so it cannot drift from the migrations.
 
