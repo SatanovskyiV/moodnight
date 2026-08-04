@@ -7,6 +7,10 @@ packages/db/src/generated/
 next-env.d.ts
 *.tsbuildinfo
 .DS_Store
+# Every env file is ignored, and the examples are the only exception. Listing
+# them individually is how a credential eventually gets committed under a name
+# nobody added to this list.
 .env
-.env.local
+.env.*
+!.env.example
 .vercel

@@ -14,8 +14,13 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,css,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,css,md}\"",
     "db": "pnpm --filter @moodnight/db",
+    "db:up": "pnpm --filter @moodnight/db db:up",
+    "db:down": "pnpm --filter @moodnight/db db:down",
+    "db:nuke": "pnpm --filter @moodnight/db db:nuke",
     "db:generate": "pnpm --filter @moodnight/db generate",
     "db:migrate": "pnpm --filter @moodnight/db migrate",
+    "db:seed": "pnpm --filter @moodnight/db seed",
+    "db:reset": "pnpm --filter @moodnight/db migrate:reset",
     "db:deploy": "pnpm --filter @moodnight/db migrate:deploy",
     "db:status": "pnpm --filter @moodnight/db migrate:status",
     "db:studio": "pnpm --filter @moodnight/db studio"

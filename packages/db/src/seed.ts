@@ -1,0 +1,54 @@
+/**
+ * Development seed — run by `pnpm db:seed`, and automatically by
+ * `prisma migrate reset`, which is what makes a wiped database usable again in
+ * one command.
+ *
+ * Idempotent by design: every row is an `upsert` keyed on a natural unique
+ * column, so running it twice changes nothing and running it against a database
+ * that already has data adds only what is missing. That is what lets it be safe
+ * to re-run after every migration.
+ *
+ * It is compiled by the package's own `tsc` into dist/ alongside the client
+ * rather than executed through a TypeScript runner — one toolchain, same as the
+ * rest of this package.
+ */
+import { createPrismaClient, type Prisma, UserRole } from "./index";
+
+/**
+ * Enough users to exercise every role and give `GET /users` something to
+ * return. The names are placeholders for a poetry site, not real accounts —
+ * there are no passwords here because authentication is Phase 3.
+ */
+const USERS: Prisma.UserCreateInput[] = [
+  { email: "admin@moodnight.dev", name: "Леся", surname: "Українка", role: UserRole.ADMIN },
+  { email: "editor@moodnight.dev", name: "Іван", surname: "Франко", role: UserRole.EDITOR },
+  { email: "author@moodnight.dev", name: "Тарас", surname: "Шевченко", role: UserRole.AUTHOR },
+  { email: "vasyl@moodnight.dev", name: "Василь", surname: "Стус", role: UserRole.AUTHOR },
+];
+
+async function seed(): Promise<void> {
+  const prisma = createPrismaClient();
+
+  try {
+    for (const user of USERS) {
+      await prisma.user.upsert({
+        where: { email: user.email },
+        // Reset the row to the seed's version, so editing this file and
+        // re-running it actually applies — the alternative, `update: {}`,
+        // silently keeps whatever is already there.
+        update: user,
+        create: user,
+      });
+    }
+
+    console.log(`Seeded ${USERS.length} users.`);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+seed().catch((error: unknown) => {
+  console.error(error);
+  // A failed seed must not look like a successful one to `migrate reset` or CI.
+  process.exitCode = 1;
+});

@@ -1,0 +1,57 @@
+# Postgres for local development, driven by `pnpm db:up` / `pnpm db:down`.
+#
+# It lives next to the schema rather than at the repo root for the same reason
+# everything else about the database does: apps/api injects a client and
+# apps/web never connects at all, so `packages/db` owns the whole story —
+# schema, migrations, connection wiring, and now the local server too.
+#
+# Production is Neon. This container is not a second environment to keep in
+# sync; it is the same Postgres, close enough that a migration proven here
+# applies there.
+name: moodnight
+
+services:
+  postgres:
+    # Pinned to the major Neon runs, so a migration cannot pass locally and then
+    # meet a different SQL dialect in production. Alpine keeps the pull small;
+    # the image is multi-arch, so it runs natively on Apple Silicon.
+    image: postgres:17-alpine
+    container_name: moodnight-postgres
+
+    # Comes back with Docker Desktop, so `pnpm dev` works on a fresh morning
+    # without remembering to start anything. `pnpm db:down` still stops it.
+    restart: unless-stopped
+
+    environment:
+      # Development credentials, deliberately boring and deliberately committed.
+      # Nothing sensitive reaches this database, and the port is bound to
+      # localhost below.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: moodnight
+
+    ports:
+      # Bound to the loopback interface rather than 0.0.0.0 — the default would
+      # publish the database to every device on the café Wi-Fi.
+      - "127.0.0.1:5432:5432"
+
+    volumes:
+      # A named volume, so the data survives `down` and only `down -v`
+      # (`pnpm db:nuke`) discards it.
+      - postgres-data:/var/lib/postgresql/data
+
+    healthcheck:
+      # `pnpm db:up` passes `--wait`, which returns only once this reports
+      # healthy. That is what makes `pnpm db:up && pnpm db:migrate` reliable:
+      # without it the migration races the server's startup and fails on a
+      # connection refused every first run of the day.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d moodnight"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      # Postgres restarts itself once during first-time initialisation; this
+      # keeps that expected blip from counting as failures.
+      start_period: 5s
+
+volumes:
+  postgres-data:

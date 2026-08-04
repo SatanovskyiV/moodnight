@@ -32,6 +32,12 @@ export default defineConfig({
     // Committed SQL, applied in order — the migration history is the record of
     // how production got its shape, so it is reviewed like any other code.
     path: path.join("prisma", "migrations"),
+
+    // Run by `prisma db seed` and, more usefully, by `prisma migrate reset` —
+    // so wiping a local database and getting it back populated is one command.
+    // It goes through the package script rather than straight to `node` so the
+    // seed is always compiled from current source before it runs.
+    seed: "pnpm run seed",
   },
 
   datasource: {
