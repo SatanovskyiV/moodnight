@@ -1,0 +1,12 @@
+{
+  // What `nest build` compiles — the Nest CLI picks this file up automatically
+  // whenever it exists, in preference to tsconfig.json.
+  //
+  // It differs from tsconfig.json in one way: the tests are excluded. They are
+  // still type-checked, because `tsc --noEmit` runs against tsconfig.json and
+  // that one includes them; they simply have no business in dist/, where they
+  // would be shipped to production and would drag vitest and supertest in with
+  // them as runtime imports.
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts", "src/testing/**"]
+}

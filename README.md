@@ -88,6 +88,35 @@ pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build
 
 The same five commands run in CI on every PR ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
+### Tests
+
+[Vitest](https://vitest.dev), from the repo root:
+
+```bash
+pnpm test                                # the whole workspace
+pnpm --filter @moodnight/api test        # one package
+pnpm --filter @moodnight/api test:watch  # rerun on save
+```
+
+**Nothing has to be running.** No `pnpm db:up`, no containers — see the trade-off below.
+
+Turbo caches `pnpm test`, so a second run with no changes prints `>>> FULL TURBO` and skips the suite. That is a real pass, not a silent one; `pnpm test --force` runs it anyway when you want to watch it happen.
+
+To narrow a run, use Vitest directly from inside the package — Turbo's filters select packages, not files:
+
+```bash
+cd apps/api
+pnpm vitest run src/users                          # a directory
+pnpm vitest run users.controller                   # a file, by path substring
+pnpm vitest run -t "409s when the email is taken"  # a single test, by name
+```
+
+Specs sit next to what they test — `users.service.spec.ts` beside `users.service.ts` — so neither can be renamed without the other showing up in the same diff. Endpoint specs boot a real Nest application and drive it with supertest, so a request travels the whole path a client's would: routing, the UUID and zod pipes, status codes, exception mapping. Calling a controller method directly would test only the line that delegates to the service.
+
+**No test touches a database.** Prisma is stubbed in [apps/api/src/testing/prisma-mock.ts](apps/api/src/testing/prisma-mock.ts), which is what lets the suite pass on a laptop with nothing up and in CI with no database service. The trade is that the queries themselves are unverified: a test asserts that `findMany` was called with the right `select` and `orderBy`, not that Postgres answers it correctly. Integration tests against the Docker Postgres above are the missing half, and are worth adding when the schema grows relations that a mock stops being able to describe honestly.
+
+Adding tests to a package that has none yet takes three things, copied from [apps/api](apps/api): a `test` script, a `vitest.config.mts`, and — wherever decorators are involved — the SWC transform that config sets up, because Vitest's default esbuild does not implement `emitDecoratorMetadata` and Nest cannot resolve a single dependency without it.
+
 ### Adding shadcn components
 
 One at a time, in the phase that needs it — never ahead of need:

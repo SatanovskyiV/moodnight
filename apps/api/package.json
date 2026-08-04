@@ -8,7 +8,8 @@
     "start": "node dist/main",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist .turbo"
   },
   "dependencies": {
@@ -27,9 +28,13 @@
     "@nestjs/cli": "^11.0.24",
     "@nestjs/schematics": "^11.1.0",
     "@nestjs/testing": "^11.1.28",
+    "@swc/core": "^1.15.47",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.2",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.2.2",
     "typescript": "~5.9.3",
+    "unplugin-swc": "^1.5.10",
     "vitest": "^4.1.10"
   }
 }
