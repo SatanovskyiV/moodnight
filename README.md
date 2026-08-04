@@ -39,17 +39,36 @@ The API documents itself from the zod schemas in `packages/shared` — a schema 
 
 Postgres via Prisma 7, all of it in `packages/db`. Nothing else in the repo talks to the database directly: `apps/api` injects `PrismaService`, and `apps/web` never connects at all — its read path is ISR-cached and goes over HTTP.
 
-**Setup.** Copy `packages/db/.env.example` to `packages/db/.env` and fill in the connection strings — one Neon database, or a local Postgres, or `pnpm db exec prisma dev` for a throwaway one the Prisma CLI ships with. That file is the only place a connection string lives locally; `apps/api` reads it from there, so it is never copied per app. In production Vercel supplies the same variables to the api project.
-
-Two strings, and they are not interchangeable: **`DATABASE_URL`** is Neon's pooled `-pooler` host, which the application connects through, and **`DIRECT_URL`** is the unpooled one, which migrations use because PgBouncer in transaction mode cannot hold the locks the schema engine takes out.
+**Locally it runs in Docker.** [packages/db/compose.yaml](packages/db/compose.yaml) defines a Postgres pinned to the major Neon runs, on `localhost:5432`, with its data in a named volume. From a fresh clone:
 
 ```bash
+pnpm db:up                    # start Postgres, wait until it accepts connections
+pnpm db:migrate               # apply the migrations
+pnpm db:seed                  # a few users, one per role
+pnpm dev
+```
+
+`pnpm db:up` returns only once the container reports healthy, so the three lines can be chained without the migration racing the server's startup.
+
+**The connection string** lives in `packages/db/.env` — one file, read by both the Prisma CLI and `apps/api`, so it is never copied per app. The local one is written for you against the container above; copy `packages/db/.env.example` over it to point somewhere else. In production nothing reads a file: Vercel supplies the same variables to the api project.
+
+Two strings there, and they are not interchangeable: **`DATABASE_URL`** is Neon's pooled `-pooler` host, which the application connects through, and **`DIRECT_URL`** is the unpooled one, which migrations use because PgBouncer in transaction mode cannot hold the locks the schema engine takes out. A local Postgres has neither — it needs only `DATABASE_URL`, which `DIRECT_URL` falls back to.
+
+```bash
+pnpm db:up / db:down          # start / stop the container — data survives both
+pnpm db:nuke                  # stop it and delete the volume, for a truly empty start
 pnpm db:migrate               # create + apply a migration from schema changes (dev)
+pnpm db:seed                  # re-run the seed; idempotent, safe any time
+pnpm db:reset                 # wipe, re-apply every migration, re-seed
 pnpm db:generate              # regenerate the client — also runs on install and build
 pnpm db:status                # which migrations the database is missing
 pnpm db:studio                # browse the data
 pnpm db:deploy                # apply pending migrations — production only, never generates
 ```
+
+**No Docker?** `pnpm db exec prisma dev` starts a Postgres the Prisma CLI ships with and prints a `DATABASE_URL` to paste into `packages/db/.env`. A Neon database works the same way. Nothing else in the workflow changes.
+
+**The seed** is [packages/db/src/seed.ts](packages/db/src/seed.ts), every row an `upsert` on a natural key so re-running it is always safe. `prisma migrate reset` runs it automatically, which is what makes `pnpm db:reset` a one-command return to a known state.
 
 **Changing the schema** means editing [packages/db/prisma/schema.prisma](packages/db/prisma/schema.prisma) and running `pnpm db:migrate`, which writes the SQL to `packages/db/prisma/migrations/` — committed, reviewed like any other code, and applied in order everywhere else with `pnpm db:deploy`. The SQL is never edited after it has been applied anywhere; a mistake is corrected by a new migration.
 
@@ -79,7 +98,23 @@ They arrive gothic automatically: the theme in [apps/web/src/app/globals.css](ap
 
 Two Vercel projects from this one repo, each with its own **Root Directory**: `apps/web` and `apps/api`. Set `NEXT_PUBLIC_API_URL` on the web project to the api project's URL, and `CORS_ORIGINS` on the api project to the web project's URL.
 
-The api project also needs `DATABASE_URL` and `DIRECT_URL` — the web project does not, and should not have them. Migrations are not part of the build: run `pnpm db:deploy` against production deliberately, so a schema change lands when someone means it to rather than as a side effect of a preview deploy.
+Neither project needs a custom build command. Vercel detects Turborepo and builds `--filter` the project, and [turbo.json](turbo.json) makes `build` depend on `^build`, so `packages/db` is built — and the Prisma client generated — before `apps/api` compiles. Leave the dashboard's build and install commands empty; overriding them is what breaks this.
+
+**Environment variables, api project only.** The deployed function needs exactly one: `DATABASE_URL`, Neon's pooled `-pooler` host. Neon's Vercel integration sets it, along with several aliases the app ignores. The web project must not have it — it never connects, and giving it the credentials only widens what a compromise reaches. Note that `apps/api` refuses to boot without it: a missing `DATABASE_URL` takes `/health` down too, not just the database routes.
+
+`DIRECT_URL` is **not** a deployment variable. Only the Prisma CLI reads it, so it belongs wherever migrations are run from — a developer's machine, or CI — and setting it on Vercel does nothing.
+
+**Migrations are not part of the build.** They are run deliberately, so a schema change lands when someone means it to rather than as a side effect of a preview deploy:
+
+```bash
+DIRECT_URL="postgresql://…neon.tech/moodnight?sslmode=require" pnpm db:deploy
+```
+
+The shell variable wins over `packages/db/.env`, which is why that command reaches Neon rather than the local container without any file being edited.
+
+**Order matters.** Apply the migration *before* the deploy that needs it: code expecting a table Neon does not have yet returns 500s until it exists. The reverse — a column added but unused — is harmless, which is the argument for schema changes that are backwards compatible with the running version.
+
+Do not seed production. [seed.ts](packages/db/src/seed.ts) writes sample users and is meant for a local database.
 
 ## The original prototype
 
