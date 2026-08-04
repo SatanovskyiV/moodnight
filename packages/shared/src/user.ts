@@ -43,30 +43,67 @@ export const userSchema = z
 export type User = z.infer<typeof userSchema>;
 
 /**
- * What a client sends to `POST /users`.
+ * What a password has to look like to be *accepted*, which is a different
+ * question from what has to be sent to *check* one — see `loginSchema` in
+ * ./auth.
+ *
+ * It lives here rather than there because a password is a field of a user, and
+ * because ./auth already imports this file: putting it the other way round
+ * would make the two modules import each other, and a cycle between files that
+ * build constants at module load is a class of bug worth simply not having.
+ *
+ * The maximum is not cosmetic. Argon2's cost is what makes it worth using, and
+ * that cost scales with the input: without a cap, a single request carrying a
+ * few megabytes of "password" is a CPU bomb aimed at a function that bills by
+ * the millisecond. 128 is far past any real passphrase and far short of
+ * dangerous.
+ */
+export const passwordSchema = z
+  .string()
+  .min(8, "Use at least 8 characters.")
+  .max(128, "Use at most 128 characters.")
+  .meta({
+    description: "At least 8 characters, at most 128.",
+    example: "свіча-у-вікні-7",
+  });
+
+/**
+ * The fields a client may ever write to a user, and the base both the create
+ * and the update schema are built from.
  *
  * Picked from {@link userSchema} rather than re-declared, so each field's rules
  * — what counts as an email, the 100-character name limit — are written once
  * and a request is checked against exactly what the response promises. The
  * server-assigned fields (`id`, `createdAt`, `updatedAt`) are absent because
  * they were never picked, not because something strips them later.
+ */
+const writableUserFields = userSchema.pick({ email: true, name: true, surname: true }).extend({
+  // Optional here, with no zod-side default: the column's `@default(AUTHOR)`
+  // in packages/db stays the single place the default is written, so there is
+  // no second copy of it to fall out of step.
+  //
+  // `ROOT` is accepted by this schema and may still be refused by the server
+  // for two reasons no schema validating a single request can see: "at most one
+  // root account" is a fact about the rows already in the table (409), and
+  // "only a root may appoint one" is a fact about who is asking (403).
+  role: userRoleSchema.optional(),
+});
+
+/**
+ * What a client sends to `POST /users` — an administrative create, not the
+ * public sign-up route (that is `registerSchema` in ./auth).
  *
  * Strict rather than stripping: an unrecognised key is a 400. A client that
  * misspells `surname` should hear about it on the request that did nothing,
  * not discover it when the row comes back missing a name.
  */
-export const createUserSchema = userSchema
-  .pick({ email: true, name: true, surname: true })
+export const createUserSchema = writableUserFields
   .extend({
-    // Optional here, with no zod-side default: the column's `@default(AUTHOR)`
-    // in packages/db stays the single place the default is written, so there is
-    // no second copy of it to fall out of step.
-    //
-    // `ROOT` is accepted by this schema and may still be refused by the server:
-    // "at most one root account" is a rule about the rows already in the table,
-    // which no schema validating a single request can see. It comes back as a
-    // 409, not a 400.
-    role: userRoleSchema.optional(),
+    // Optional, because an account is allowed to exist before it has a
+    // password — the column is nullable for exactly this. Such an account
+    // cannot sign in until one is set, which is the honest state of an invite
+    // rather than a placeholder credential pretending to be real.
+    password: passwordSchema.optional(),
   })
   .strict()
   .meta({ description: "The fields needed to create a user." });
@@ -74,15 +111,23 @@ export const createUserSchema = userSchema
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 /**
- * What a client sends to `PATCH /users/:id` — any subset of the creatable
+ * What a client sends to `PATCH /users/:id` — any subset of the writable
  * fields, and at least one of them.
+ *
+ * Built from `writableUserFields` rather than from `createUserSchema`, and the
+ * difference is the whole point: **`password` is not patchable.** Deriving this
+ * from the create schema would hand any admin the ability to overwrite another
+ * account's password and then sign in as its owner — a takeover dressed up as
+ * an edit. Choosing a password stays something only the account's owner does,
+ * through a flow that proves who they are.
  *
  * The at-least-one rule is not pedantry: Prisma stamps `updatedAt` on every
  * `update` call regardless of whether the data changes anything, so accepting
  * `{}` would let a no-op request rewrite the row's history.
  */
-export const updateUserSchema = createUserSchema
+export const updateUserSchema = writableUserFields
   .partial()
+  .strict()
   .refine((patch) => Object.keys(patch).length > 0, {
     message: "Provide at least one field to change.",
   })

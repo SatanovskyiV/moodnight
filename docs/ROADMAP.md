@@ -1,6 +1,6 @@
 # MoodNight — from prototype to product
 
-> **Status:** planning complete, Phase 1 not started · **Last updated:** 2026-08-03
+> **Status:** Phase 1 done, Phase 2 under way, Phase 3's API half landed · **Last updated:** 2026-08-04
 > Links to `../prototype/*` refer to the original prototype files, which Phase 1 replaces.
 
 ## Context
@@ -146,7 +146,7 @@ Each phase ships and deploys on its own. The shadcn line is everything that phas
 
 - **Phase 2 — Data.** Neon + Prisma + migrations, seed from `data.jsx`, read endpoints with pagination, ISR pages `/`, `/poem/[slug]`, `/author/[slug]`, `/tag/[slug]`. Slugs need Cyrillic transliteration.
   *shadcn: `badge` (tags), `avatar` (author), `skeleton` (loading).*
-- **Phase 3 — Auth.** Register / login / refresh / logout / me. Argon2 hashing, short-lived JWT + httpOnly refresh cookie, roles guard. Wire up the Phase 1 form with `react-hook-form` + `@hookform/resolvers/zod`, resolving against **the same zod schema `packages/shared` gives NestJS's validation pipe** — one schema, validated on both sides. Email verification via Resend. Google OAuth as a later Passport strategy.
+- **Phase 3 — Auth.** ~~Register / login / refresh / logout / me. Argon2 hashing, short-lived JWT + httpOnly refresh cookie, roles guard.~~ **The API half is done** — see the Authentication section of [README.md](../README.md). Still to do: wire up the Phase 1 form with `react-hook-form` + `@hookform/resolvers/zod`, resolving against **the same zod schema `packages/shared` gives NestJS's validation pipe** — one schema, validated on both sides. Email verification via Resend. Google OAuth as a later Passport strategy. A password-reset flow, which is also what `PATCH /users/:id` deliberately does *not* provide.
   *shadcn: `form`, `sonner` (toasts), `dropdown-menu` (user menu).*
 - **Phase 4 — Writing + moderation.** Poem editor, `/me/poems` dashboard, `DRAFT → PENDING_REVIEW → PUBLISHED|REJECTED` transitions, `/admin/queue` for editors, `Review` audit trail, notification emails. This is where shadcn earns its place — the queue is a real data table and none of it gets hand-built.
   *shadcn: `table` (+ TanStack Table), `dialog`, `alert-dialog`, `textarea`, `select`, `tabs`.*

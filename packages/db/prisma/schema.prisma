@@ -78,10 +78,31 @@ model User {
   name    String @db.VarChar(100)
   surname String @db.VarChar(100)
 
+  /// Argon2id, in PHC string form — which encodes the parameters it was
+  /// computed with, so raising the cost settings in apps/api later does not
+  /// invalidate the hashes already written here. 255 characters is far more
+  /// than the ~100 an argon2id hash occupies.
+  ///
+  /// Nullable, and that is not laxity. An account can exist without a password:
+  /// the seed's do, an admin may create one before its owner has chosen a
+  /// password, and the roadmap's Google sign-in never sets one. A null means
+  /// "cannot sign in with a password" — never "any password will do", which is
+  /// the reading the login path is written to make impossible.
+  passwordHash String? @map("password_hash") @db.VarChar(255)
+
   /// Everyone registers as an AUTHOR; only an explicit write moves an account
   /// up the ladder. ROOT is the one value this column cannot hold twice — see
   /// the note under `@@map`.
   role UserRole @default(AUTHOR)
+
+  /// What makes signing out mean something without a sessions table.
+  ///
+  /// Every refresh token carries the value this column held when it was issued,
+  /// and is refused once the two disagree. Signing out increments it, so every
+  /// refresh token for the account stops verifying at once — on every device,
+  /// which is the deliberate trade for not storing sessions. Access tokens are
+  /// not checked against it and live out their short TTL.
+  tokenVersion Int @default(0) @map("token_version")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   /// Maintained by Prisma on every `update`, not by a database trigger: a row

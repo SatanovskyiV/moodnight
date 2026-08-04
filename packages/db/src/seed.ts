@@ -12,12 +12,24 @@
  * rather than executed through a TypeScript runner — one toolchain, same as the
  * rest of this package.
  */
+import { hash } from "@node-rs/argon2";
+
 import { createPrismaClient, type Prisma, UserRole } from "./index";
 
 /**
+ * The password every seeded account shares, so signing in as any role during
+ * development is one thing to remember rather than five.
+ *
+ * It is committed, and that is safe for exactly one reason: nothing seeds a
+ * deployed database. `prisma migrate deploy` — what production runs — does not
+ * run seeds, and these addresses exist only on a local Postgres. Should that
+ * ever stop being true, this constant is the first thing that has to go.
+ */
+const DEV_PASSWORD = "moodnight-dev";
+
+/**
  * Enough users to exercise every role and give `GET /users` something to
- * return. The names are placeholders for a poetry site, not real accounts —
- * there are no passwords here because authentication is Phase 3.
+ * return. The names are placeholders for a poetry site, not real accounts.
  *
  * The root account is the one row here that cannot simply be copied: the
  * database allows a single ROOT, so if some other email already holds the role
@@ -25,7 +37,7 @@ import { createPrismaClient, type Prisma, UserRole } from "./index";
  * second owner. That is the intended outcome — the seed is not the thing that
  * gets to decide who the owner is on a database that already answered.
  */
-const USERS: Prisma.UserCreateInput[] = [
+const USERS: Omit<Prisma.UserCreateInput, "passwordHash">[] = [
   { email: "root@moodnight.dev", name: "Ліна", surname: "Костенко", role: UserRole.ROOT },
   { email: "admin@moodnight.dev", name: "Леся", surname: "Українка", role: UserRole.ADMIN },
   { email: "editor@moodnight.dev", name: "Іван", surname: "Франко", role: UserRole.EDITOR },
@@ -36,19 +48,28 @@ const USERS: Prisma.UserCreateInput[] = [
 async function seed(): Promise<void> {
   const prisma = createPrismaClient();
 
+  // Hashed once and shared by every row: argon2 is deliberately slow, and five
+  // identical passwords need one computation, not five. The API verifies
+  // whatever parameters this produces — a PHC string carries its own — so the
+  // library defaults are enough here and the tuned settings stay in apps/api,
+  // where they are actually paid for on every login.
+  const passwordHash = await hash(DEV_PASSWORD);
+
   try {
     for (const user of USERS) {
+      const row = { ...user, passwordHash };
+
       await prisma.user.upsert({
         where: { email: user.email },
         // Reset the row to the seed's version, so editing this file and
         // re-running it actually applies — the alternative, `update: {}`,
         // silently keeps whatever is already there.
-        update: user,
-        create: user,
+        update: row,
+        create: row,
       });
     }
 
-    console.log(`Seeded ${USERS.length} users.`);
+    console.log(`Seeded ${USERS.length} users. Password for all of them: ${DEV_PASSWORD}`);
   } finally {
     await prisma.$disconnect();
   }

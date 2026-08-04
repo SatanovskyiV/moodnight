@@ -3,7 +3,9 @@ import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { TokensService } from "../auth/tokens.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { authTestImports, authTestProviders } from "../testing/auth-harness";
 import {
   createPrismaMock,
   ONE_ROOT_INDEX,
@@ -23,36 +25,58 @@ import { UsersService } from "./users.service";
  *
  * These go through a real Nest application rather than calling the controller's
  * methods directly, because most of what a route promises is not in its method
- * body: the UUID pipe, the zod pipe, `@HttpCode(204)`, and the mapping from a
- * thrown `ConflictException` to a 409 payload all live in the framework. A
- * direct call would test the one line that delegates to the service and quietly
- * skip everything a client actually depends on.
+ * body: the UUID pipe, the zod pipe, `@HttpCode(204)`, the guards, and the
+ * mapping from a thrown `ConflictException` to a 409 payload all live in the
+ * framework. A direct call would test the one line that delegates to the
+ * service and quietly skip everything a client actually depends on.
  *
- * Only the database is faked. The application is otherwise assembled the way
- * main.ts assembles it — which is easy to keep true because main.ts registers
- * no global pipes, filters, or interceptors, so there is nothing here that has
- * to be remembered and mirrored.
+ * Only the database is faked — the tokens are real ones, signed and verified by
+ * the same `TokensService` the application uses, so these cases exercise
+ * signature checking rather than a mock that always agrees.
+ *
+ * The application is otherwise assembled the way main.ts assembles it, which
+ * stays easy to keep true because main.ts registers no global pipes, filters,
+ * interceptors or guards — the guards are on the controller, where they are
+ * visible from the routes they protect.
  */
 describe("Users endpoints", () => {
   let app: INestApplication;
   let prisma: PrismaMock;
 
+  /** Real access tokens, one per role, minted once for the whole file. */
+  let asEditor: string;
+  let asAdmin: string;
+  let asRoot: string;
+  let asAuthor: string;
+
   beforeAll(async () => {
     prisma = createPrismaMock();
 
     const moduleRef = await Test.createTestingModule({
+      imports: authTestImports(),
       controllers: [UsersController],
-      providers: [UsersService, { provide: PrismaService, useValue: prisma }],
+      providers: [UsersService, ...authTestProviders, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
+
+    const tokens = moduleRef.get(TokensService);
+    [asAuthor, asEditor, asAdmin, asRoot] = await Promise.all([
+      tokens.signAccess(OTHER_USER_ID, "AUTHOR"),
+      tokens.signAccess(OTHER_USER_ID, "EDITOR"),
+      tokens.signAccess(OTHER_USER_ID, "ADMIN"),
+      tokens.signAccess(OTHER_USER_ID, "ROOT"),
+    ]);
   });
 
   // Built once and shared: `init()` is the expensive part, and each test sets
   // up the stub responses it needs, so there is no state to leak between them.
   beforeEach(() => {
     vi.clearAllMocks();
+    // Both write paths read the target's role first to decide whether the row
+    // is the root account. Unless a case says otherwise, it is not.
+    prisma.user.findUnique.mockResolvedValue(userRow());
   });
 
   afterAll(async () => {
@@ -61,11 +85,17 @@ describe("Users endpoints", () => {
 
   const http = () => request(app.getHttpServer());
 
+  /** `.set(...auth(asAdmin))` — the header pair, spelled once. */
+  const auth = (token: string): [string, string] => ["authorization", `Bearer ${token}`];
+
   describe("GET /users", () => {
     it("returns every user with the timestamps serialised as ISO strings", async () => {
       prisma.user.findMany.mockResolvedValue([userRow(), userRow({ id: OTHER_USER_ID })]);
 
-      const response = await http().get("/users").expect(200);
+      const response = await http()
+        .get("/users")
+        .set(...auth(asEditor))
+        .expect(200);
 
       expect(response.body).toEqual([userJson(), userJson({ id: OTHER_USER_ID })]);
     });
@@ -73,7 +103,10 @@ describe("Users endpoints", () => {
     it("returns an empty array rather than a 404 when there are no users", async () => {
       prisma.user.findMany.mockResolvedValue([]);
 
-      const response = await http().get("/users").expect(200);
+      const response = await http()
+        .get("/users")
+        .set(...auth(asEditor))
+        .expect(200);
 
       expect(response.body).toEqual([]);
     });
@@ -83,7 +116,10 @@ describe("Users endpoints", () => {
     it("returns the user", async () => {
       prisma.user.findUnique.mockResolvedValue(userRow());
 
-      const response = await http().get(`/users/${USER_ID}`).expect(200);
+      const response = await http()
+        .get(`/users/${USER_ID}`)
+        .set(...auth(asEditor))
+        .expect(200);
 
       expect(response.body).toEqual(userJson());
     });
@@ -91,13 +127,19 @@ describe("Users endpoints", () => {
     it("404s when no row has that id", async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      const response = await http().get(`/users/${USER_ID}`).expect(404);
+      const response = await http()
+        .get(`/users/${USER_ID}`)
+        .set(...auth(asEditor))
+        .expect(404);
 
       expect(response.body.message).toBe(`No user with id ${USER_ID}.`);
     });
 
     it("400s on an id that is not a UUID, without querying", async () => {
-      await http().get("/users/not-a-uuid").expect(400);
+      await http()
+        .get("/users/not-a-uuid")
+        .set(...auth(asEditor))
+        .expect(400);
 
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
@@ -106,7 +148,10 @@ describe("Users endpoints", () => {
     // a v4 id cannot have come from this database, so it is a malformed request
     // and not a lookup that happens to miss.
     it("400s on a well-formed UUID of the wrong version", async () => {
-      const response = await http().get(`/users/${UUID_V4}`).expect(400);
+      const response = await http()
+        .get(`/users/${UUID_V4}`)
+        .set(...auth(asEditor))
+        .expect(400);
 
       expect(response.body.message).toContain("uuid");
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
@@ -123,7 +168,11 @@ describe("Users endpoints", () => {
     it("creates the user and answers 201", async () => {
       prisma.user.create.mockResolvedValue(userRow({ email: "new.poet@moodnight.dev" }));
 
-      const response = await http().post("/users").send(body).expect(201);
+      const response = await http()
+        .post("/users")
+        .set(...auth(asAdmin))
+        .send(body)
+        .expect(201);
 
       expect(response.body).toEqual(userJson({ email: "new.poet@moodnight.dev" }));
     });
@@ -133,7 +182,11 @@ describe("Users endpoints", () => {
     it("lowercases the email before writing it", async () => {
       prisma.user.create.mockResolvedValue(userRow());
 
-      await http().post("/users").send(body).expect(201);
+      await http()
+        .post("/users")
+        .set(...auth(asAdmin))
+        .send(body)
+        .expect(201);
 
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -147,6 +200,7 @@ describe("Users endpoints", () => {
 
       await http()
         .post("/users")
+        .set(...auth(asAdmin))
         .send({ ...body, role: "EDITOR" })
         .expect(201);
 
@@ -158,7 +212,11 @@ describe("Users endpoints", () => {
     it("omits role entirely when the client does, leaving the column default to apply", async () => {
       prisma.user.create.mockResolvedValue(userRow());
 
-      await http().post("/users").send(body).expect(201);
+      await http()
+        .post("/users")
+        .set(...auth(asAdmin))
+        .send(body)
+        .expect(201);
 
       const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
       expect(data).not.toHaveProperty("role");
@@ -167,7 +225,11 @@ describe("Users endpoints", () => {
     it("400s and writes nothing when a required field is missing", async () => {
       const { surname: _surname, ...withoutSurname } = body;
 
-      const response = await http().post("/users").send(withoutSurname).expect(400);
+      const response = await http()
+        .post("/users")
+        .set(...auth(asAdmin))
+        .send(withoutSurname)
+        .expect(400);
 
       expect(response.body.message).toEqual(
         expect.arrayContaining([expect.stringContaining("surname")]),
@@ -178,6 +240,7 @@ describe("Users endpoints", () => {
     it("400s on a malformed email", async () => {
       const response = await http()
         .post("/users")
+        .set(...auth(asAdmin))
         .send({ ...body, email: "not-an-email" })
         .expect(400);
 
@@ -192,6 +255,7 @@ describe("Users endpoints", () => {
     it("400s on an unrecognised key", async () => {
       const response = await http()
         .post("/users")
+        .set(...auth(asAdmin))
         .send({ ...body, sirname: "Франко" })
         .expect(400);
 
@@ -204,7 +268,11 @@ describe("Users endpoints", () => {
     it("409s when the email is taken, naming the normalised address", async () => {
       prisma.user.create.mockRejectedValue(prismaError("P2002"));
 
-      const response = await http().post("/users").send(body).expect(409);
+      const response = await http()
+        .post("/users")
+        .set(...auth(asAdmin))
+        .send(body)
+        .expect(409);
 
       expect(response.body.message).toBe(
         "A user with the email new.poet@moodnight.dev already exists.",
@@ -220,6 +288,7 @@ describe("Users endpoints", () => {
 
       const response = await http()
         .post("/users")
+        .set(...auth(asRoot))
         .send({ ...body, role: "ROOT" })
         .expect(409);
 
@@ -231,6 +300,7 @@ describe("Users endpoints", () => {
 
       const response = await http()
         .post("/users")
+        .set(...auth(asRoot))
         .send({ ...body, role: "ROOT" })
         .expect(201);
 
@@ -245,7 +315,11 @@ describe("Users endpoints", () => {
     it("applies a partial change and returns the updated user", async () => {
       prisma.user.update.mockResolvedValue(userRow({ name: "Ольга" }));
 
-      const response = await http().patch(`/users/${USER_ID}`).send({ name: "Ольга" }).expect(200);
+      const response = await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({ name: "Ольга" })
+        .expect(200);
 
       expect(response.body).toEqual(userJson({ name: "Ольга" }));
       expect(prisma.user.update).toHaveBeenCalledWith(
@@ -256,7 +330,11 @@ describe("Users endpoints", () => {
     it("lowercases an email being changed", async () => {
       prisma.user.update.mockResolvedValue(userRow());
 
-      await http().patch(`/users/${USER_ID}`).send({ email: "Renamed@Moodnight.DEV" }).expect(200);
+      await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({ email: "Renamed@Moodnight.DEV" })
+        .expect(200);
 
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { email: "renamed@moodnight.dev" } }),
@@ -268,7 +346,11 @@ describe("Users endpoints", () => {
     // changed. The schema's refinement is what stops it, and this is the test
     // that would notice if it were dropped.
     it("400s on an empty body", async () => {
-      const response = await http().patch(`/users/${USER_ID}`).send({}).expect(400);
+      const response = await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({})
+        .expect(400);
 
       expect(response.body.message).toEqual(
         expect.arrayContaining([expect.stringContaining("at least one")]),
@@ -277,13 +359,21 @@ describe("Users endpoints", () => {
     });
 
     it("400s on an unrecognised key", async () => {
-      await http().patch(`/users/${USER_ID}`).send({ nickname: "Kamenyar" }).expect(400);
+      await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({ nickname: "Kamenyar" })
+        .expect(400);
 
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it("400s on a malformed id before reading the body", async () => {
-      await http().patch("/users/not-a-uuid").send({ name: "Ольга" }).expect(400);
+      await http()
+        .patch("/users/not-a-uuid")
+        .set(...auth(asAdmin))
+        .send({ name: "Ольга" })
+        .expect(400);
 
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
@@ -291,7 +381,11 @@ describe("Users endpoints", () => {
     it("404s when the row is gone", async () => {
       prisma.user.update.mockRejectedValue(prismaError("P2025"));
 
-      const response = await http().patch(`/users/${USER_ID}`).send({ name: "Ольга" }).expect(404);
+      const response = await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({ name: "Ольга" })
+        .expect(404);
 
       expect(response.body.message).toBe(`No user with id ${USER_ID}.`);
     });
@@ -301,6 +395,7 @@ describe("Users endpoints", () => {
 
       const response = await http()
         .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
         .send({ email: "Taken@Moodnight.dev" })
         .expect(409);
 
@@ -312,7 +407,11 @@ describe("Users endpoints", () => {
     it("409s when promoting an account to ROOT while one already holds it", async () => {
       prisma.user.update.mockRejectedValue(prismaError("P2002", ONE_ROOT_INDEX));
 
-      const response = await http().patch(`/users/${USER_ID}`).send({ role: "ROOT" }).expect(409);
+      const response = await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asRoot))
+        .send({ role: "ROOT" })
+        .expect(409);
 
       expect(response.body.message).toContain("already a root account");
     });
@@ -322,7 +421,10 @@ describe("Users endpoints", () => {
     it("answers 204 with no body", async () => {
       prisma.user.delete.mockResolvedValue({ id: USER_ID });
 
-      const response = await http().delete(`/users/${USER_ID}`).expect(204);
+      const response = await http()
+        .delete(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .expect(204);
 
       expect(response.text).toBe("");
       expect(prisma.user.delete).toHaveBeenCalledWith(
@@ -336,15 +438,170 @@ describe("Users endpoints", () => {
     it("404s when the row is already gone", async () => {
       prisma.user.delete.mockRejectedValue(prismaError("P2025"));
 
-      const response = await http().delete(`/users/${USER_ID}`).expect(404);
+      const response = await http()
+        .delete(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .expect(404);
 
       expect(response.body.message).toBe(`No user with id ${USER_ID}.`);
     });
 
     it("400s on a malformed id, without deleting anything", async () => {
-      await http().delete("/users/not-a-uuid").expect(400);
+      await http()
+        .delete("/users/not-a-uuid")
+        .set(...auth(asAdmin))
+        .expect(400);
 
       expect(prisma.user.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The hole this controller documented for two phases, closed.
+   *
+   * Every case here asserts that nothing reached the database, because a guard
+   * that runs *after* the work is not a guard. Nest runs guards before pipes
+   * and before the handler, which is what these `not.toHaveBeenCalled` lines
+   * are actually pinning down.
+   */
+  describe("who may do what", () => {
+    // Sequential rather than a `Promise.all`: supertest starts a fresh
+    // ephemeral listener per request, and five at once against the same server
+    // intermittently resets the connection.
+    it("401s on every route without a token", async () => {
+      await http().get("/users").expect(401);
+      await http().get(`/users/${USER_ID}`).expect(401);
+      await http().post("/users").send({}).expect(401);
+      await http().patch(`/users/${USER_ID}`).send({ name: "Ольга" }).expect(401);
+      await http().delete(`/users/${USER_ID}`).expect(401);
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    it("401s on a token this API did not sign", async () => {
+      const forged = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4Iiwicm9sZSI6IlJPT1QifQ.not-a-signature";
+
+      await http()
+        .get("/users")
+        .set(...auth(forged))
+        .expect(401);
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+    });
+
+    // The reads hand out every member's email address, which is why they are
+    // not open to the authors those addresses belong to.
+    it("403s an author trying to read the user list", async () => {
+      await http()
+        .get("/users")
+        .set(...auth(asAuthor))
+        .expect(403);
+      await http()
+        .get(`/users/${USER_ID}`)
+        .set(...auth(asAuthor))
+        .expect(403);
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+    });
+
+    it("403s an editor trying to write, while letting the same editor read", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await http()
+        .get("/users")
+        .set(...auth(asEditor))
+        .expect(200);
+
+      await http()
+        .post("/users")
+        .set(...auth(asEditor))
+        .send({ email: "poet@moodnight.dev", name: "Леся", surname: "Українка" })
+        .expect(403);
+      await http()
+        .delete(`/users/${USER_ID}`)
+        .set(...auth(asEditor))
+        .expect(403);
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    // `@Roles("EDITOR")` means "EDITOR or above" — the ladder is compared by
+    // rank, so a route names the lowest role it accepts and every role above it
+    // passes without being listed.
+    it("lets a role above the requirement through", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await http()
+        .get("/users")
+        .set(...auth(asAdmin))
+        .expect(200);
+      await http()
+        .get("/users")
+        .set(...auth(asRoot))
+        .expect(200);
+    });
+
+    it("403s an admin appointing a root, without reaching the database", async () => {
+      await http()
+        .post("/users")
+        .set(...auth(asAdmin))
+        .send({ email: "poet@moodnight.dev", name: "Леся", surname: "Українка", role: "ROOT" })
+        .expect(403);
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The specific escalation the old comment named: an admin who could delete
+     * the root account could then create a new one and appoint themselves,
+     * since the database only ever enforced that the role was unique — never
+     * who was allowed to take it.
+     */
+    it("403s an admin editing or deleting the root account", async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ role: "ROOT" }));
+
+      await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({ email: "mine@moodnight.dev" })
+        .expect(403);
+      await http()
+        .delete(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .expect(403);
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    it("lets the root demote itself, which is what keeps the role transferable", async () => {
+      prisma.user.findUnique.mockResolvedValue(userRow({ role: "ROOT" }));
+      prisma.user.update.mockResolvedValue(userRow({ role: "ADMIN" }));
+
+      await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asRoot))
+        .send({ role: "ADMIN" })
+        .expect(200);
+    });
+
+    // `updateUserSchema` has no `password`, deliberately: deriving it from the
+    // create schema would let any admin overwrite another account's password
+    // and then sign in as its owner.
+    it("400s an attempt to set a password through the admin update route", async () => {
+      const response = await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({ password: "taking-this-account" })
+        .expect(400);
+
+      expect(response.body.message).toEqual(
+        expect.arrayContaining([expect.stringContaining("password")]),
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 });

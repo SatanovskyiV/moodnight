@@ -1,4 +1,12 @@
-import { createUserSchema, healthSchema, updateUserSchema, userSchema } from "@moodnight/shared";
+import {
+  createUserSchema,
+  healthSchema,
+  loginSchema,
+  registerSchema,
+  sessionSchema,
+  updateUserSchema,
+  userSchema,
+} from "@moodnight/shared";
 import type {
   ReferenceObject,
   SchemaObject,
@@ -21,6 +29,12 @@ const openApiSchemas = {
   User: userSchema,
   CreateUser: createUserSchema,
   UpdateUser: updateUserSchema,
+  Register: registerSchema,
+  Login: loginSchema,
+  // Nests `User`, and because the whole map goes through one zod registry below
+  // it comes out as a `$ref` to the sibling component rather than a second
+  // inlined copy of the user shape.
+  Session: sessionSchema,
 } satisfies Record<string, z.ZodType>;
 
 export type OpenApiSchemaName = keyof typeof openApiSchemas;

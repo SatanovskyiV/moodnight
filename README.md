@@ -37,7 +37,32 @@ The API documents itself from the zod schemas in `packages/shared` — a schema 
 
 The same schemas validate what comes in: a write endpoint applies [`ZodValidationPipe`](apps/api/src/common/zod-validation.pipe.ts) to its `@Body`, so the shape Swagger documents is the shape the route enforces, and a rejected request comes back as `{ statusCode, error, message: [...] }` — the shape Nest's own `ValidationPipe` produces.
 
-**None of the routes are authenticated yet** — Phase 3 brings the roles guard they need. `GET /users` hands out email addresses and `POST /users` accepts a `role`, so this is not an API to expose publicly before then. The single-root rule below is a rule about *how many* root accounts exist, not about who may become one; the second half is the guard's job.
+### Authentication
+
+`POST /auth/register` and `POST /auth/login` both answer with a short-lived **access token** in the body and a long-lived **refresh token** in an httpOnly cookie. Passwords are argon2id ([apps/api/src/auth/password.ts](apps/api/src/auth/password.ts)).
+
+```bash
+API=localhost:3001
+
+curl -s -c jar.txt -X POST $API/auth/login -H 'content-type: application/json' \
+  -d '{"email":"admin@moodnight.dev","password":"moodnight-dev"}' | jq -r .accessToken > tok
+
+curl -s $API/auth/me    -H "authorization: Bearer $(cat tok)"   # the signed-in account
+curl -s $API/users      -H "authorization: Bearer $(cat tok)"   # guarded; 401 without
+curl -s -b jar.txt -X POST $API/auth/refresh                     # a new access token
+curl -i -b jar.txt -X POST $API/auth/logout                      # 204, and revokes
+```
+
+`moodnight-dev` is the seeded password for every account the seed creates — it exists only on a local database, and nothing seeds a deployed one.
+
+Two things worth knowing before changing any of it:
+
+- **Signing out revokes everywhere.** There is no sessions table; instead every refresh token carries the account's `tokenVersion`, and `POST /auth/logout` increments the column, so every refresh token ever issued for that account stops verifying at once. Access tokens already handed out keep working until they expire — minutes, not days.
+- **The refresh cookie is `SameSite=Lax` locally and `SameSite=None; Secure` in production**, decided in [refresh-cookie.ts](apps/api/src/auth/refresh-cookie.ts). Locally `:3000` and `:3001` are the same site, so `Lax` works; on Vercel the two projects are different subdomains of `vercel.app`, which the Public Suffix List makes *cross-site*, and a `Lax` cookie would simply never be sent. This is the one part of the setup that fails only after deployment.
+
+`JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are required and must differ — see [apps/api/.env.example](apps/api/.env.example). The API refuses to start without them.
+
+**Who may do what.** `/users` is the administrative surface, not the way anyone signs up, and every route on it now requires a token and a minimum role — reads for `EDITOR` and above, writes for `ADMIN` and above. Two rules about `ROOT` sit under those, in the service: only a root may appoint a root, and only a root may edit or delete the account that is one. The single-root index enforces *how many* root accounts exist; those two enforce who may become one.
 
 ### The database
 
@@ -48,7 +73,7 @@ Postgres via Prisma 7, all of it in `packages/db`. Nothing else in the repo talk
 ```bash
 pnpm db:up                    # start Postgres, wait until it accepts connections
 pnpm db:migrate               # apply the migrations
-pnpm db:seed                  # a few users, one per role — including the root
+pnpm db:seed                  # a few users, one per role — all with the same password
 pnpm dev
 ```
 
@@ -119,6 +144,8 @@ pnpm vitest run -t "409s when the email is taken"  # a single test, by name
 
 Specs sit next to what they test — `users.service.spec.ts` beside `users.service.ts` — so neither can be renamed without the other showing up in the same diff. Endpoint specs boot a real Nest application and drive it with supertest, so a request travels the whole path a client's would: routing, the UUID and zod pipes, status codes, exception mapping. Calling a controller method directly would test only the line that delegates to the service.
 
+Tokens in the specs are **real** ones, signed and verified by the same `TokensService` the app uses ([apps/api/src/testing/auth-harness.ts](apps/api/src/testing/auth-harness.ts) sets the test secrets and mints them). Argon2 hashing is real too — which is why the fixture hash in `prisma-mock.ts` is a literal rather than something recomputed per file.
+
 **No test touches a database.** Prisma is stubbed in [apps/api/src/testing/prisma-mock.ts](apps/api/src/testing/prisma-mock.ts), which is what lets the suite pass on a laptop with nothing up and in CI with no database service. The trade is that the queries themselves are unverified: a test asserts that `findMany` was called with the right `select` and `orderBy`, not that Postgres answers it correctly. Integration tests against the Docker Postgres above are the missing half, and are worth adding when the schema grows relations that a mock stops being able to describe honestly.
 
 Adding tests to a package that has none yet takes three things, copied from [apps/api](apps/api): a `test` script, a `vitest.config.mts`, and — wherever decorators are involved — the SWC transform that config sets up, because Vitest's default esbuild does not implement `emitDecoratorMetadata` and Nest cannot resolve a single dependency without it.
@@ -136,6 +163,8 @@ They arrive gothic automatically: the theme in [apps/web/src/app/globals.css](ap
 ### Deploying
 
 Two Vercel projects from this one repo, each with its own **Root Directory**: `apps/web` and `apps/api`. Set `NEXT_PUBLIC_API_URL` on the web project to the api project's URL, and `CORS_ORIGINS` on the api project to the web project's URL.
+
+The api project also needs `DATABASE_URL`, `DIRECT_URL`, and both JWT secrets (`openssl rand -base64 48`, twice — they must differ). It will not boot without any of them, which is deliberate: a missing secret should stop a deploy, not sign tokens with `undefined`.
 
 Neither project needs a custom build command. Vercel detects Turborepo and builds `--filter` the project, and [turbo.json](turbo.json) makes `build` depend on `^build`, so `packages/db` is built — and the Prisma client generated — before `apps/api` compiles. Leave the dashboard's build and install commands empty; overriding them is what breaks this.
 

@@ -1,6 +1,7 @@
 import { type INestApplication, Logger } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 
+import { REFRESH_COOKIE } from "../auth/refresh-cookie";
 import { buildComponentSchemas } from "./openapi-schemas";
 
 const DOCS_PATH = "docs";
@@ -36,9 +37,13 @@ export function setupSwagger(app: INestApplication): void {
         "the same ones the API validates against.",
     )
     .setVersion("0.0.0")
-    // Inert until a controller carries @ApiBearerAuth — declared now so the
-    // Phase 3 JWT endpoints only need the decorator.
+    // Paste an access token into Swagger's Authorize box and the guarded
+    // routes become callable from the page. `/auth/login` returns one.
     .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" }, "access-token")
+    // The refresh cookie. Declared so `/auth/refresh` and `/auth/logout` show
+    // what they read, though nothing needs typing in: the browser holds the
+    // cookie already and sends it with the request Swagger makes.
+    .addCookieAuth(REFRESH_COOKIE, { type: "apiKey", in: "cookie" }, REFRESH_COOKIE)
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

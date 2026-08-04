@@ -29,6 +29,24 @@ export interface UserRowFixture {
 }
 
 /**
+ * The password every fixture account has, and the argon2id hash of it.
+ *
+ * The hash is a literal rather than something computed in a `beforeAll`, and
+ * that is worth the ugliness: argon2 is deliberately slow, and hashing this
+ * once per test file would add real time to a suite that is meant to run on
+ * every save. Verifying against it is fast enough — one hash computation per
+ * assertion that needs one.
+ *
+ * Regenerate with:
+ *
+ *   node -e "require('@node-rs/argon2').hash('correct-horse-battery', \
+ *     { algorithm: 2, memoryCost: 19456, timeCost: 2, parallelism: 1 }).then(console.log)"
+ */
+export const FIXTURE_PASSWORD = "correct-horse-battery";
+export const FIXTURE_PASSWORD_HASH =
+  "$argon2id$v=19$m=19456,t=2,p=1$d6QP9bLT2OtTk6mfDwhSJQ$0uI+iqHGCHnTtzaTThw3cGG2jgXd3UVfi3ea3XGg3Jw";
+
+/**
  * UUIDv7s, because the routes validate the version and not merely the shape:
  * the third group starts with `7` and the fourth with one of `89ab`. A v4 id
  * fails these routes, which is what {@link UUID_V4} exists to prove.
@@ -68,10 +86,36 @@ export function userJson(overrides: Partial<UserRowFixture> = {}) {
 }
 
 /**
- * Only the delegate methods the users service actually calls. Adding a query
- * elsewhere in the app means adding it here too, and the failure when it is
- * missing — `prisma.user.upsert is not a function` — points straight at the
- * untested call.
+ * A row as the login path reads it — `CREDENTIAL_FIELDS`, not the public ones.
+ * Defaults to an account whose password is {@link FIXTURE_PASSWORD}; pass
+ * `{ passwordHash: null }` for one that has never set a password.
+ */
+export function credentialRow(overrides: Partial<CredentialRowFixture> = {}) {
+  return {
+    id: USER_ID,
+    role: "AUTHOR" as const,
+    passwordHash: FIXTURE_PASSWORD_HASH as string | null,
+    tokenVersion: 0,
+    ...overrides,
+  };
+}
+
+export interface CredentialRowFixture {
+  id: string;
+  role: UserRowFixture["role"];
+  passwordHash: string | null;
+  tokenVersion: number;
+}
+
+/** A row as the refresh path reads it — `SESSION_FIELDS`. */
+export function sessionRow(overrides: Partial<Omit<CredentialRowFixture, "passwordHash">> = {}) {
+  return { id: USER_ID, role: "AUTHOR" as const, tokenVersion: 0, ...overrides };
+}
+
+/**
+ * Only the delegate methods the app actually calls. Adding a query elsewhere
+ * means adding it here too, and the failure when it is missing —
+ * `prisma.user.upsert is not a function` — points straight at the untested call.
  */
 export function createPrismaMock() {
   return {

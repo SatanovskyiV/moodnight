@@ -1,19 +1,25 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Prisma } from "@moodnight/db";
-import type { CreateUserInput, UpdateUserInput, User } from "@moodnight/shared";
+import type { CreateUserInput, UpdateUserInput, User, UserRole } from "@moodnight/shared";
 
+import { hashPassword } from "../auth/password";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
  * The columns the API is willing to expose, named explicitly rather than taken
  * as Prisma's default of "every scalar on the model".
  *
- * This is the reason the endpoints stay safe as the schema grows: when Phase 3
- * adds `passwordHash`, a bare `findMany()` would start returning it and nothing
- * would complain. With an explicit `select`, a new column is invisible until
- * someone adds it here on purpose. Every read and every write below returns
- * through it, so there is one answer to "what does a user look like on the
- * wire" rather than one per method.
+ * This is the reason the endpoints stayed safe as the schema grew: `passwordHash`
+ * and `tokenVersion` now exist on the model, and a bare `findMany()` would hand
+ * both to anyone reading `/users` — while this list simply never mentioned them,
+ * so nothing had to be remembered on the day they were added. The three methods
+ * below that genuinely need a credential name it in their own `select`, one
+ * field at a time, and none of them returns it to a client.
  */
 const PUBLIC_FIELDS = {
   id: true,
@@ -23,6 +29,25 @@ const PUBLIC_FIELDS = {
   role: true,
   createdAt: true,
   updatedAt: true,
+} as const;
+
+/**
+ * What the login path needs and nothing else: enough to check a password, and
+ * the token version to stamp into the session that follows — read here so a
+ * successful sign-in costs two queries rather than three.
+ */
+const CREDENTIAL_FIELDS = {
+  id: true,
+  role: true,
+  passwordHash: true,
+  tokenVersion: true,
+} as const;
+
+/** What the refresh path needs: enough to check a token version and re-sign. */
+const SESSION_FIELDS = {
+  id: true,
+  role: true,
+  tokenVersion: true,
 } as const;
 
 /** Prisma's code for "a unique constraint rejected this write". */
@@ -120,6 +145,33 @@ function noSuchUser(id: string): NotFoundException {
   return new NotFoundException(`No user with id ${id}.`);
 }
 
+/**
+ * The two rules about the ROOT account that the database cannot express.
+ *
+ * The `users_one_root` index guarantees no two accounts hold the role at once.
+ * It says nothing about *who may hand it over* — and without that, an admin
+ * could simply delete the root account and appoint themselves, which is the
+ * hole the users controller has been documenting since before there was
+ * anything to close it with.
+ *
+ * So: only a root appoints a root, and only a root may edit or remove the
+ * account that is one. Demoting themselves is still open to a root, which is
+ * what keeps the role transferable rather than a decision the first seed makes
+ * permanently.
+ */
+function assertMayAppointRoot(actor: UserRole, role: UserRole | undefined): void {
+  if (role === "ROOT" && actor !== "ROOT") {
+    throw new ForbiddenException("Only the root account can appoint a new one.");
+  }
+}
+
+/** The other half: an admin may not edit or delete the account that holds ROOT. */
+function assertMayTouchRootAccount(actor: UserRole, target: UserRole): void {
+  if (target === "ROOT" && actor !== "ROOT") {
+    throw new ForbiddenException("Only the root account can change or remove itself.");
+  }
+}
+
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -162,7 +214,14 @@ export class UsersService {
 
   /**
    * Creates a user. `role` is optional; the column's `@default(AUTHOR)` fills
-   * it in when it is absent.
+   * it in when it is absent. `password` is optional too — an account may exist
+   * before it has one, and until it does it simply cannot sign in.
+   *
+   * `actor` is who is asking, and it is optional for one caller: public
+   * registration, which arrives through `AuthService` with nobody signed in.
+   * That path is safe without an actor precisely because `registerSchema` has
+   * no `role` field to carry, so the only role it can ever produce is the
+   * column's default.
    *
    * The duplicate email is caught rather than checked for first. A `findUnique`
    * beforehand would still lose the race between the check and the insert, so
@@ -171,12 +230,24 @@ export class UsersService {
    * when a root already exists: two simultaneous requests would both pass a
    * prior check and only the index can refuse the second insert.
    */
-  async create(input: CreateUserInput): Promise<User> {
+  async create(input: CreateUserInput, actor?: UserRole): Promise<User> {
+    if (actor) {
+      assertMayAppointRoot(actor, input.role);
+    }
+
+    const { password, ...fields } = input;
     const email = normaliseEmail(input.email);
 
     try {
       const user = await this.prisma.user.create({
-        data: { ...input, email },
+        data: {
+          ...fields,
+          email,
+          // Spread rather than assigned, so an absent password leaves the key
+          // off the insert entirely and the column keeps its NULL — rather than
+          // writing an explicit `undefined` that Prisma would have to interpret.
+          ...(password ? { passwordHash: await hashPassword(password) } : {}),
+        },
         select: PUBLIC_FIELDS,
       });
 
@@ -202,11 +273,19 @@ export class UsersService {
    * changes nothing but `updatedAt`.
    *
    * Promoting someone to `ROOT` goes through here, and is refused with a 409
-   * while another account holds it. Demoting the current root is an ordinary
-   * `role` change — which is what makes the promotion recoverable rather than a
-   * decision the first seed makes permanently.
+   * while another account holds it — and with a 403 if the person asking is not
+   * themselves the root. Demoting the current root is an ordinary `role`
+   * change, available to the root alone, which is what makes the promotion
+   * recoverable rather than a decision the first seed makes permanently.
+   *
+   * There is no `password` in `UpdateUserInput`, and that is a deliberate
+   * absence rather than an oversight — see the note on `updateUserSchema` in
+   * @moodnight/shared.
    */
-  async update(id: string, patch: UpdateUserInput): Promise<User> {
+  async update(id: string, patch: UpdateUserInput, actor: UserRole): Promise<User> {
+    assertMayAppointRoot(actor, patch.role);
+    assertMayTouchRootAccount(actor, await this.roleOf(id));
+
     const data = patch.email ? { ...patch, email: normaliseEmail(patch.email) } : patch;
 
     try {
@@ -242,7 +321,9 @@ export class UsersService {
    * cascade the poems, reassign them, or soft-delete the account and keep the
    * work. The referential action on that relation is where it gets made.
    */
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actor: UserRole): Promise<void> {
+    assertMayTouchRootAccount(actor, await this.roleOf(id));
+
     try {
       // `select` narrowed to the one column: nothing reads the deleted row, and
       // this is a 204, so there is no reason to carry it back from the database.
@@ -254,5 +335,75 @@ export class UsersService {
 
       throw error;
     }
+  }
+
+  /**
+   * An account's stored credential, for the login path — which is the only
+   * caller, and the only reason `passwordHash` is ever read out of the table.
+   *
+   * Returns `null` for an address nobody has registered, and a row with a null
+   * `passwordHash` for an account that has never set one. `AuthService` answers
+   * both the same way, and takes the same time doing it.
+   */
+  findForAuth(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email: normaliseEmail(email) },
+      select: CREDENTIAL_FIELDS,
+    });
+  }
+
+  /**
+   * An account's current role and token version, for the refresh path.
+   *
+   * Both fields are read live rather than trusted from the token being
+   * redeemed: `tokenVersion` is what makes a sign-out stick, and `role` is what
+   * makes a demotion take effect within one refresh rather than at the end of a
+   * thirty-day cookie.
+   */
+  findForRefresh(id: string) {
+    return this.prisma.user.findUnique({ where: { id }, select: SESSION_FIELDS });
+  }
+
+  /**
+   * Ends every session for an account by moving the number its refresh tokens
+   * were signed against.
+   *
+   * `increment` rather than a read-then-write: two sign-outs racing each other
+   * both need to invalidate, and reading the value first would let the slower
+   * one write back a number the faster one had already passed.
+   */
+  async revokeSessions(id: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id },
+        data: { tokenVersion: { increment: 1 } },
+        select: { id: true },
+      });
+    } catch (error) {
+      if (isPrismaError(error, RECORD_NOT_FOUND)) {
+        throw noSuchUser(id);
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * The target's role, for the two ROOT rules above.
+   *
+   * A read before the write, so it races in principle: the row could change
+   * roles in between. In practice the ROOT row is not changing under anyone,
+   * and the alternative — folding the condition into the `update`'s `where` —
+   * would collapse "no such user" and "you may not touch the root" into one
+   * indistinguishable P2025 and lose both messages.
+   */
+  private async roleOf(id: string): Promise<UserRole> {
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { role: true } });
+
+    if (!user) {
+      throw noSuchUser(id);
+    }
+
+    return user.role;
   }
 }

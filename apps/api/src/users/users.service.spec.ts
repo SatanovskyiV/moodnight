@@ -33,8 +33,10 @@ describe("UsersService", () => {
    * make this assertion true by construction — it has to be a second,
    * independent statement of the list for it to catch a column being added.
    *
-   * When Phase 3 adds `passwordHash`, this is the test that fails if a `select`
-   * anywhere in the service is dropped and Prisma falls back to every scalar.
+   * `passwordHash` and `tokenVersion` are the reason this matters now rather
+   * than in principle: both exist on the model, and a `select` dropped anywhere
+   * in the service would have Prisma fall back to every scalar and start
+   * returning a password hash from `GET /users`. This list is what fails first.
    */
   const PUBLIC_FIELDS = {
     id: true,
@@ -168,10 +170,16 @@ describe("UsersService", () => {
   });
 
   describe("update", () => {
+    // Both write paths read the target's role first, to decide whether the row
+    // being touched is the root account. Every case below stubs that read.
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue({ role: "AUTHOR" });
+    });
+
     it("leaves a patch without an email alone", async () => {
       prisma.user.update.mockResolvedValue(userRow());
 
-      await service.update(USER_ID, { name: "Ольга" });
+      await service.update(USER_ID, { name: "Ольга" }, "ADMIN");
 
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: USER_ID },
@@ -184,17 +192,150 @@ describe("UsersService", () => {
       const unknown = prismaError("P1001");
       prisma.user.update.mockRejectedValue(unknown);
 
-      await expect(service.update(USER_ID, { name: "Ольга" })).rejects.toBe(unknown);
+      await expect(service.update(USER_ID, { name: "Ольга" }, "ADMIN")).rejects.toBe(unknown);
+    });
+
+    it("404s on a row that is gone before reaching the update", async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.update(USER_ID, { name: "Ольга" }, "ADMIN")).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the two ROOT rules", () => {
+    // The `users_one_root` index enforces that no two accounts hold the role.
+    // These are the other half: who may hand it over. Both are checked before
+    // any write is attempted, which is what the `not.toHaveBeenCalled` lines
+    // are there to hold.
+    it("refuses to let an admin appoint a root, on create or on update", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "AUTHOR" });
+
+      const input = { email: "poet@moodnight.dev", name: "Леся", surname: "Українка" } as const;
+
+      await expect(service.create({ ...input, role: "ROOT" }, "ADMIN")).rejects.toMatchObject({
+        status: 403,
+      });
+      await expect(service.update(USER_ID, { role: "ROOT" }, "ADMIN")).rejects.toMatchObject({
+        status: 403,
+      });
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // The hole this closes by name: an admin who could delete the root account
+    // could then create a new one and appoint themselves, since only the
+    // uniqueness of the role was ever enforced and not who may take it.
+    it("refuses to let an admin edit or delete the root account", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "ROOT" });
+
+      await expect(service.update(USER_ID, { name: "Ольга" }, "ADMIN")).rejects.toMatchObject({
+        status: 403,
+      });
+      await expect(service.remove(USER_ID, "ADMIN")).rejects.toMatchObject({ status: 403 });
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    it("lets the root do both, which is what keeps the role transferable", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "ROOT" });
+      prisma.user.update.mockResolvedValue(userRow({ role: "AUTHOR" }));
+
+      await expect(service.update(USER_ID, { role: "AUTHOR" }, "ROOT")).resolves.toBeDefined();
+      expect(prisma.user.update).toHaveBeenCalled();
+    });
+
+    // Registration reaches `create` with nobody signed in. It is safe without
+    // an actor only because `registerSchema` has no `role` field to carry — so
+    // this asserts the absence of the check, not an exemption from it.
+    it("skips the check entirely when there is no actor, as registration has none", async () => {
+      prisma.user.create.mockResolvedValue(userRow());
+
+      await expect(
+        service.create({ email: "poet@moodnight.dev", name: "Леся", surname: "Українка" }),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe("passwords", () => {
+    const input = { email: "poet@moodnight.dev", name: "Леся", surname: "Українка" } as const;
+
+    it("hashes the password and never writes the plaintext", async () => {
+      prisma.user.create.mockResolvedValue(userRow());
+
+      await service.create({ ...input, password: "nightfall-7" });
+
+      const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
+
+      expect(data).not.toHaveProperty("password");
+      expect(data.passwordHash).toEqual(expect.stringMatching(/^\$argon2id\$/));
+      expect(JSON.stringify(data)).not.toContain("nightfall-7");
+    });
+
+    // An account may exist before it has a password; the column is nullable for
+    // exactly that. Writing an explicit null would be the same outcome, but
+    // omitting the key is what lets the column's own default stand.
+    it("omits the column entirely when no password is given", async () => {
+      prisma.user.create.mockResolvedValue(userRow());
+
+      await service.create(input);
+
+      const [{ data }] = prisma.user.create.mock.calls[0] as [{ data: Record<string, unknown> }];
+      expect(data).not.toHaveProperty("passwordHash");
+    });
+  });
+
+  describe("revokeSessions", () => {
+    // `increment` and not a read-then-write: two sign-outs racing each other
+    // both have to invalidate, and reading the value first would let the slower
+    // one write back a number the faster one had already passed.
+    it("increments the token version in the database rather than in memory", async () => {
+      prisma.user.update.mockResolvedValue({ id: USER_ID });
+
+      await service.revokeSessions(USER_ID);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: { tokenVersion: { increment: 1 } },
+        select: { id: true },
+      });
+    });
+
+    it("404s when the account is already gone", async () => {
+      prisma.user.update.mockRejectedValue(prismaError("P2025"));
+
+      await expect(service.revokeSessions(USER_ID)).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe("findForAuth", () => {
+    it("looks the account up by its normalised email and reads the hash", async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await service.findForAuth("Poet@Moodnight.dev");
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: "poet@moodnight.dev" },
+        select: { id: true, role: true, passwordHash: true, tokenVersion: true },
+      });
     });
   });
 
   describe("remove", () => {
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue({ role: "AUTHOR" });
+    });
+
     // The row is not read back — nothing renders it and the route is a 204 —
     // so the delete asks Postgres for one column instead of seven.
     it("carries only the id back from the database", async () => {
       prisma.user.delete.mockResolvedValue({ id: USER_ID });
 
-      await service.remove(USER_ID);
+      await service.remove(USER_ID, "ADMIN");
 
       expect(prisma.user.delete).toHaveBeenCalledWith({
         where: { id: USER_ID },
@@ -205,14 +346,14 @@ describe("UsersService", () => {
     it("resolves to nothing", async () => {
       prisma.user.delete.mockResolvedValue({ id: USER_ID });
 
-      await expect(service.remove(USER_ID)).resolves.toBeUndefined();
+      await expect(service.remove(USER_ID, "ADMIN")).resolves.toBeUndefined();
     });
 
     it("rethrows a database error it does not recognise", async () => {
       const unknown = prismaError("P1001");
       prisma.user.delete.mockRejectedValue(unknown);
 
-      await expect(service.remove(USER_ID)).rejects.toBe(unknown);
+      await expect(service.remove(USER_ID, "ADMIN")).rejects.toBe(unknown);
     });
   });
 });
