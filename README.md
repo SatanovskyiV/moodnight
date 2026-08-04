@@ -35,6 +35,10 @@ Copy `apps/web/.env.example` and `apps/api/.env.example` to `.env.local` / `.env
 
 The API documents itself from the zod schemas in `packages/shared` — a schema listed in [openapi-schemas.ts](apps/api/src/swagger/openapi-schemas.ts) becomes an OpenAPI component, and controllers point at it with `zodRef("Name")`. There are no duplicate DTO classes to keep in sync. `SWAGGER_ENABLED=false` hides the docs.
 
+The same schemas validate what comes in: a write endpoint applies [`ZodValidationPipe`](apps/api/src/common/zod-validation.pipe.ts) to its `@Body`, so the shape Swagger documents is the shape the route enforces, and a rejected request comes back as `{ statusCode, error, message: [...] }` — the shape Nest's own `ValidationPipe` produces.
+
+**None of the routes are authenticated yet** — Phase 3 brings the roles guard they need. `GET /users` hands out email addresses and `POST /users` accepts a `role`, so this is not an API to expose publicly before then.
+
 ### The database
 
 Postgres via Prisma 7, all of it in `packages/db`. Nothing else in the repo talks to the database directly: `apps/api` injects `PrismaService`, and `apps/web` never connects at all — its read path is ISR-cached and goes over HTTP.

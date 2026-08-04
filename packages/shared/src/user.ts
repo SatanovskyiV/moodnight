@@ -40,3 +40,46 @@ export const userSchema = z
   .meta({ description: "A registered user." });
 
 export type User = z.infer<typeof userSchema>;
+
+/**
+ * What a client sends to `POST /users`.
+ *
+ * Picked from {@link userSchema} rather than re-declared, so each field's rules
+ * — what counts as an email, the 100-character name limit — are written once
+ * and a request is checked against exactly what the response promises. The
+ * server-assigned fields (`id`, `createdAt`, `updatedAt`) are absent because
+ * they were never picked, not because something strips them later.
+ *
+ * Strict rather than stripping: an unrecognised key is a 400. A client that
+ * misspells `surname` should hear about it on the request that did nothing,
+ * not discover it when the row comes back missing a name.
+ */
+export const createUserSchema = userSchema
+  .pick({ email: true, name: true, surname: true })
+  .extend({
+    // Optional here, with no zod-side default: the column's `@default(AUTHOR)`
+    // in packages/db stays the single place the default is written, so there is
+    // no second copy of it to fall out of step.
+    role: userRoleSchema.optional(),
+  })
+  .strict()
+  .meta({ description: "The fields needed to create a user." });
+
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+/**
+ * What a client sends to `PATCH /users/:id` — any subset of the creatable
+ * fields, and at least one of them.
+ *
+ * The at-least-one rule is not pedantry: Prisma stamps `updatedAt` on every
+ * `update` call regardless of whether the data changes anything, so accepting
+ * `{}` would let a no-op request rewrite the row's history.
+ */
+export const updateUserSchema = createUserSchema
+  .partial()
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: "Provide at least one field to change.",
+  })
+  .meta({ description: "The fields to change on a user. At least one is required." });
+
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;

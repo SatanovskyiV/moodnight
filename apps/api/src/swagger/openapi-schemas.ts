@@ -1,4 +1,4 @@
-import { healthSchema, userSchema } from "@moodnight/shared";
+import { createUserSchema, healthSchema, updateUserSchema, userSchema } from "@moodnight/shared";
 import type {
   ReferenceObject,
   SchemaObject,
@@ -11,10 +11,16 @@ import { z } from "zod";
  * source of truth: nothing here re-declares a payload, so the documented
  * contract cannot drift from the validated one. Add a schema to this map and
  * it is documented; reference it from a controller with `zodRef`.
+ *
+ * Request bodies belong here as much as responses do — `CreateUser` is the
+ * schema the users controller validates against, so what Swagger offers to send
+ * is what the endpoint accepts, down to the rejected unknown keys.
  */
 const openApiSchemas = {
   Health: healthSchema,
   User: userSchema,
+  CreateUser: createUserSchema,
+  UpdateUser: updateUserSchema,
 } satisfies Record<string, z.ZodType>;
 
 export type OpenApiSchemaName = keyof typeof openApiSchemas;

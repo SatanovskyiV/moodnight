@@ -17,9 +17,10 @@ async function bootstrap() {
   if (process.env.SWAGGER_ENABLED !== "false") {
     setupSwagger(app);
   }
-  // No global ValidationPipe: validation goes through the zod schemas in
-  // @moodnight/shared (a ZodValidationPipe lands in Phase 3, when there are
-  // request bodies), so class-validator never enters the dependency tree.
+  // No global ValidationPipe: bodies are validated by `ZodValidationPipe`
+  // against the zod schemas in @moodnight/shared, applied per parameter because
+  // only the route knows which schema its body should be read as. Nothing here
+  // needs class-validator, so it never enters the dependency tree.
 
   // Without this, SIGTERM kills the process before `onModuleDestroy` runs and
   // the database connections are dropped rather than closed — noticeable in
