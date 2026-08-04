@@ -28,7 +28,9 @@ export type UserRole = z.infer<typeof userRoleSchema>;
 export const userSchema = z
   .object({
     id: z.uuid().meta({ description: "UUIDv7 — time-ordered, so it sorts by creation." }),
-    email: z.email().meta({ description: "Login identity. Unique.", example: "poet@moodnight.dev" }),
+    email: z
+      .email()
+      .meta({ description: "Login identity. Unique.", example: "poet@moodnight.dev" }),
     name: z.string().min(1).max(100).meta({ example: "Леся" }),
     surname: z.string().min(1).max(100).meta({ example: "Українка" }),
     role: userRoleSchema,
