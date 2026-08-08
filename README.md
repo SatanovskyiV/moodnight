@@ -33,7 +33,7 @@ open localhost:3001/docs     # Swagger UI; the raw document is on /docs/json
 
 Copy `apps/web/.env.example` and `apps/api/.env.example` to `.env.local` / `.env` if you need to change ports or the API URL. The API also needs a database — see below; it refuses to start without one.
 
-`pnpm dev` needs neither file: the web app falls back to `localhost:3001` for the API in development. `pnpm build` does need `NEXT_PUBLIC_API_URL` — a production bundle has that address baked into it, so building without one is a deploy that looks green and cannot sign anybody in, and the build stops instead.
+`pnpm dev` needs neither file: the web app falls back to `localhost:3001` for the API in development. `pnpm build` does need `API_ORIGIN` — it is where the `/api` proxy forwards to, so building without one is a deploy that looks green and cannot reach the API at all, and the build stops instead.
 
 The API documents itself from the zod schemas in `packages/shared` — a schema listed in [openapi-schemas.ts](apps/api/src/swagger/openapi-schemas.ts) becomes an OpenAPI component, and controllers point at it with `zodRef("Name")`. There are no duplicate DTO classes to keep in sync. `SWAGGER_ENABLED=false` hides the docs.
 
@@ -64,7 +64,10 @@ Three files around it are hand-written and stay that way:
 `POST /auth/register` and `POST /auth/login` both answer with a short-lived **access token** in the body and a long-lived **refresh token** in an httpOnly cookie. Passwords are argon2id ([apps/api/src/auth/password.ts](apps/api/src/auth/password.ts)).
 
 ```bash
-API=localhost:3001
+# The web app's proxy, not :3001 directly — the refresh cookie is pathed for
+# how the browser reaches the API, and curl matches paths the same way it does.
+# `pnpm dev` runs both, so this is already up.
+API=localhost:3000/api
 
 curl -s -c jar.txt -X POST $API/auth/login -H 'content-type: application/json' \
   -d '{"email":"admin@moodnight.dev","password":"moodnight-dev"}' | jq -r .accessToken > tok
@@ -80,7 +83,7 @@ curl -i -b jar.txt -X POST $API/auth/logout                      # 204, and revo
 Two things worth knowing before changing any of it:
 
 - **Signing out revokes everywhere.** There is no sessions table; instead every refresh token carries the account's `tokenVersion`, and `POST /auth/logout` increments the column, so every refresh token ever issued for that account stops verifying at once. Access tokens already handed out keep working until they expire — minutes, not days.
-- **The refresh cookie is `SameSite=Lax` locally and `SameSite=None; Secure` in production**, decided in [refresh-cookie.ts](apps/api/src/auth/refresh-cookie.ts). Locally `:3000` and `:3001` are the same site, so `Lax` works; on Vercel the two projects are different subdomains of `vercel.app`, which the Public Suffix List makes *cross-site*, and a `Lax` cookie would simply never be sent. This is the one part of the setup that fails only after deployment.
+- **The browser never calls the API directly — it calls `/api` on the web app's own origin**, and the rewrite in [next.config.ts](apps/web/next.config.ts) forwards it. That exists for one reason: the two Vercel projects are different subdomains of `vercel.app`, which the Public Suffix List makes *cross-site*, so a refresh cookie set by the api project is a third-party cookie. Safari has blocked those outright since 13.1, as do Chrome's incognito windows and Brave — sign-in worked, the cookie was dropped, and the next reload showed "sign in" again. `SameSite=None` asks permission; it does not grant it. Behind the proxy the cookie is first-party, so it is plain `SameSite=Lax` and behaves the same in development and production. Its `Path` is `/api/auth` — the path the *browser* uses — which is the one part of [refresh-cookie.ts](apps/api/src/auth/refresh-cookie.ts) that has to move if the proxy prefix ever does.
 
 `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` are required and must differ — see [apps/api/.env.example](apps/api/.env.example). The API refuses to start without them.
 
@@ -184,7 +187,7 @@ They arrive gothic automatically: the theme in [apps/web/src/app/globals.css](ap
 
 ### Deploying
 
-Two Vercel projects from this one repo, each with its own **Root Directory**: `apps/web` and `apps/api`. Set `NEXT_PUBLIC_API_URL` on the web project to the api project's URL, and `CORS_ORIGINS` on the api project to the web project's URL.
+Two Vercel projects from this one repo, each with its own **Root Directory**: `apps/web` and `apps/api`. Set `API_ORIGIN` on the web project to the api project's URL — that is what its `/api` proxy forwards to, and it is read at build time, so changing it needs a redeploy rather than just a restart. `CORS_ORIGINS` on the api project should still name the web project's URL; no visitor's browser depends on it now that requests are same-origin, but anything calling the API directly does.
 
 The api project also needs `DATABASE_URL`, `DIRECT_URL`, and both JWT secrets (`openssl rand -base64 48`, twice — they must differ). It will not boot without any of them, which is deliberate: a missing secret should stop a deploy, not sign tokens with `undefined`.
 

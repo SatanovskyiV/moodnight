@@ -47,11 +47,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-      # `next build` inlines NEXT_PUBLIC_API_URL into the browser bundle, and
-      # apps/web/src/lib/api/request.ts refuses to build a production bundle
-      # rather than shipping a site that asks every visitor's own machine for the
-      # API. CI never calls this address — it only has to exist — so the local
-      # default stands in for it. The real one is set per Vercel project.
+      # apps/web/next.config.ts refuses to build a production bundle without
+      # API_ORIGIN rather than deploying a /api proxy pointed at the build
+      # machine's own localhost. CI never calls this address — it only has to
+      # exist — so the local default stands in for it. The real one is set per
+      # Vercel project.
       - run: pnpm build
         env:
-          NEXT_PUBLIC_API_URL: http://localhost:3001
+          API_ORIGIN: http://localhost:3001

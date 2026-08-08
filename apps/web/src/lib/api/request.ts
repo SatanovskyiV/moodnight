@@ -1,31 +1,30 @@
 import { ApiRequestError } from "./error";
 
 /**
- * Where the NestJS API lives, decided once at build time.
+ * What every API path is prefixed with — which is deliberately not the same
+ * thing on both sides of the render.
  *
- * The fallback is scoped to development on purpose. `NEXT_PUBLIC_*` values are
- * inlined into the bundle by `next build`, so a production build with this unset
- * would ship a browser bundle asking every visitor's own machine for the API —
- * a deploy that looks green and is entirely broken. Throwing here fails the
- * build instead, the same trade apps/api makes with its JWT secrets. Locally the
- * default matches the port `pnpm dev` uses, so no `.env.local` is needed to run
- * the site (see apps/web/.env.example).
+ * **In the browser it is a path, not a URL.** Requests go to this app's own
+ * origin and the rewrite in next.config.ts forwards them to the API. That is
+ * not a convenience: it is the only reason the refresh cookie survives, because
+ * a cookie from the api project's separate `vercel.app` subdomain is a
+ * third-party cookie and Safari drops those on the floor. The whole argument is
+ * written out at that rewrite.
+ *
+ * **On the server there is no proxy to go through** — a Server Component
+ * rendering on Vercel is not a browser and has no origin to make a path
+ * relative to, so it calls the API directly. Nothing does that yet; Phase 2's
+ * ISR pages will, and a relative URL would fail there with a parse error rather
+ * than anything that names its cause.
+ *
+ * No guard for a missing `API_ORIGIN` here, because next.config.ts already
+ * refuses to build without it — the proxy needs the same value, and one place
+ * that stops the build is better than two that disagree about whether to.
  */
-export const API_URL = (() => {
-  const configured = process.env.NEXT_PUBLIC_API_URL;
-
-  if (!configured) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("NEXT_PUBLIC_API_URL is not set — the browser has no API to call.");
-    }
-
-    return "http://localhost:3001";
-  }
-
-  // A configured value ending in `/` would otherwise produce `//auth/login`,
-  // which some hosts answer and some 404.
-  return configured.replace(/\/+$/, "");
-})();
+const API_BASE =
+  typeof window === "undefined"
+    ? (process.env.API_ORIGIN ?? "http://localhost:3001").replace(/\/+$/, "")
+    : "/api";
 
 /**
  * The one function every generated endpoint in `generated/` calls.
@@ -41,11 +40,11 @@ export const API_URL = (() => {
  * member the response turned out to be. Since only 2xx gets this far, that is
  * always the successful member — `payload` in ./error is what says so in types.
  *
- * `credentials: "include"` is the load-bearing option: register, login and
- * refresh all answer with a `Set-Cookie` carrying the refresh token, and without
- * this the browser drops it — sign-in appears to work and the session evaporates
- * on the next reload. It is also why apps/api enables CORS against an explicit
- * origin list with `credentials: true`; neither half works alone.
+ * `credentials: "include"` is kept even though {@link API_BASE} now makes every
+ * browser request same-origin, where `same-origin` — the default — would do.
+ * `include` is what a server-side call would need if one ever went cross-origin,
+ * and leaving it says the cookie is part of the contract rather than an accident
+ * of where the API happens to be mounted this month.
  *
  * It is spread before `init` rather than after so a generated call could
  * override it. None do, and none should — but the ordering says which one is
@@ -61,7 +60,7 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response;
 
   try {
-    response = await fetch(`${API_URL}${url}`, { credentials: "include", ...init });
+    response = await fetch(`${API_BASE}${url}`, { credentials: "include", ...init });
   } catch {
     // `fetch` rejects only for a request that never got an answer — the API is
     // down, DNS failed, the origin was refused by CORS. Every answer the server

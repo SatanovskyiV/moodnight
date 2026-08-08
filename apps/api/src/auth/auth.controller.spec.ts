@@ -112,7 +112,10 @@ describe("Auth endpoints", () => {
 
       expect(cookie).toBeDefined();
       expect(cookie).toContain("HttpOnly");
-      expect(cookie).toContain("Path=/auth");
+      // `/api/auth`, not `/auth`: the browser reaches these routes through
+      // apps/web's same-origin proxy, and Path is matched against that URL.
+      // See refresh-cookie.ts.
+      expect(cookie).toContain("Path=/api/auth");
       expect(response.body).not.toHaveProperty("refreshToken");
 
       // The whole token, not a prefix of it: every JWT this API signs shares
@@ -304,7 +307,7 @@ describe("Auth endpoints", () => {
       // Cleared with the same Path it was set with — a Set-Cookie whose path
       // differs does not replace the original, and the sign-out would appear to
       // work while leaving the cookie in place.
-      expect(refreshCookie(response)).toContain("Path=/auth");
+      expect(refreshCookie(response)).toContain("Path=/api/auth");
     });
 
     it("401s without a refresh cookie, so a sign-out cannot be forged for someone else", async () => {
