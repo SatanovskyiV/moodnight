@@ -67,6 +67,7 @@
     "title": "MoodNight",
     "tagline": "The frame is up. Theme, type and tokens are in place — the poetry follows.",
     "welcome": {
+      "restoring": "The candles are remembering you",
       "eyebrow": "The candles know you",
       "line": "Your candle burns again. The night is listening.",
       "since": "In the book of shadows since {date, date, long}",

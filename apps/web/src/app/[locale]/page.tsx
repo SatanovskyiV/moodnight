@@ -10,10 +10,11 @@ import { Welcome } from "./welcome";
  * already real and lives in the layout.
  *
  * The one part that is not a placeholder for a stranger is what a member sees:
- * `Welcome` swaps the three lines below for a greeting once the session has
- * been restored. Everything here stays a Server Component either way — see the
- * note on that file for why the anonymous copy is passed to it rather than
- * rendered by it.
+ * `Welcome` swaps everything below for a greeting once the session has been
+ * restored — the swatches included, because a proof that the theme compiles is
+ * addressed to us and not to somebody who came here to read poetry. Everything
+ * here stays a Server Component either way; see the note on that file for why
+ * the anonymous copy is passed to it rather than rendered by it.
  */
 export default async function Home(props: LocaleParams) {
   await resolveLocale(props);
@@ -42,28 +43,28 @@ function HomeContent() {
         </h1>
 
         <p className="text-muted-foreground compact:text-xl text-lg">{t("tagline")}</p>
-      </Welcome>
 
-      <div className="border-border flex flex-wrap gap-3 border-t pt-8">
-        {(
-          [
-            ["bg-background", "background"],
-            ["bg-card", "card"],
-            ["bg-secondary", "secondary"],
-            ["bg-primary", "primary"],
-            ["bg-ember", "ember"],
-            ["bg-destructive", "destructive"],
-          ] as const
-        ).map(([className, label]) => (
-          <div key={label} className="flex flex-col items-center gap-2">
-            <div className={`border-border size-12 border ${className}`} />
-            {/* Token names, not prose — deliberately untranslated. */}
-            <span className="text-parchment-faint text-micro tracking-widest uppercase">
-              {label}
-            </span>
-          </div>
-        ))}
-      </div>
+        <div className="border-border flex flex-wrap gap-3 border-t pt-8">
+          {(
+            [
+              ["bg-background", "background"],
+              ["bg-card", "card"],
+              ["bg-secondary", "secondary"],
+              ["bg-primary", "primary"],
+              ["bg-ember", "ember"],
+              ["bg-destructive", "destructive"],
+            ] as const
+          ).map(([className, label]) => (
+            <div key={label} className="flex flex-col items-center gap-2">
+              <div className={`border-border size-12 border ${className}`} />
+              {/* Token names, not prose — deliberately untranslated. */}
+              <span className="text-parchment-faint text-micro tracking-widest uppercase">
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Welcome>
     </main>
   );
 }
