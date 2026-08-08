@@ -20,6 +20,8 @@ The goal is a real site for a small Ukrainian poetry group — non-commercial, n
 | Database | Neon Postgres | 0.5 GB + 100 CU-h/mo free, scale-to-zero, branching for preview deploys |
 | ORM | Prisma 7 | Use Neon's **pooled** connection string — serverless opens many short-lived connections |
 | Auth | NestJS-owned (Passport JWT + httpOnly refresh cookie) | Auth.js couples to the Next.js runtime and fights a separate backend |
+| API client | orval, generated from `apps/api/openapi.json` | The document already comes from the shared zod schemas; generating the client extends that one definition all the way into the components that call it |
+| Server state | TanStack Query, via orval's generated hooks | Caching, deduplication, retry and in-flight state arrive with each endpoint rather than being hand-rolled per component; fewer requests is also directly fewer function invocations |
 | Repo | pnpm workspaces + Turborepo | pnpm 10.33 and Node 24.12 already installed locally |
 | Styling | Tailwind v4.3 + shadcn/ui | Radix a11y under the hood; pays for itself on the Phase 3 forms and Phase 4 moderation queue |
 | Fonts | `next/font` | Replaces the render-blocking Google Fonts `<link>` in [MoodNight.html:10](../prototype/MoodNight.html#L10) |

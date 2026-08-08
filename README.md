@@ -33,9 +33,31 @@ open localhost:3001/docs     # Swagger UI; the raw document is on /docs/json
 
 Copy `apps/web/.env.example` and `apps/api/.env.example` to `.env.local` / `.env` if you need to change ports or the API URL. The API also needs a database — see below; it refuses to start without one.
 
+`pnpm dev` needs neither file: the web app falls back to `localhost:3001` for the API in development. `pnpm build` does need `NEXT_PUBLIC_API_URL` — a production bundle has that address baked into it, so building without one is a deploy that looks green and cannot sign anybody in, and the build stops instead.
+
 The API documents itself from the zod schemas in `packages/shared` — a schema listed in [openapi-schemas.ts](apps/api/src/swagger/openapi-schemas.ts) becomes an OpenAPI component, and controllers point at it with `zodRef("Name")`. There are no duplicate DTO classes to keep in sync. `SWAGGER_ENABLED=false` hides the docs.
 
 The same schemas validate what comes in: a write endpoint applies [`ZodValidationPipe`](apps/api/src/common/zod-validation.pipe.ts) to its `@Body`, so the shape Swagger documents is the shape the route enforces, and a rejected request comes back as `{ statusCode, error, message: [...] }` — the shape Nest's own `ValidationPipe` produces.
+
+### The web app's API client
+
+`apps/web` does not hand-write requests. [orval](https://orval.dev) generates them from the API's own OpenAPI document, so the chain from one definition to the calling code is unbroken: zod schema in `packages/shared` → `components.schemas` in the document → TypeScript in `apps/web/src/lib/api/generated`.
+
+Every endpoint arrives as a **[TanStack Query](https://tanstack.com/query) hook** — `useLogin`, `useListUsers`, `useGetUser` — as well as a plain function. Components call the hooks and get caching, deduplication, retries, and `isPending`/`error` without any of it being written here; a new endpoint gets all of it by existing. The plain functions are still the right thing outside a component, or when an endpoint's HTTP method disagrees with what it means: `SessionProvider` wraps `refresh` in its own `useQuery` because `POST /auth/refresh` is a read as far as the browser is concerned.
+
+```bash
+pnpm api:generate            # re-emit apps/api/openapi.json, then regenerate the client
+```
+
+Run it after changing any controller, schema or route. **Both outputs are committed**, which is what lets `apps/web` be typechecked and built without booting the API against a database — and CI runs the same command and fails if the result differs from what was committed, so they cannot quietly go stale.
+
+Three files around it are hand-written and stay that way:
+
+- [request.ts](apps/web/src/lib/api/request.ts) — the transport every generated endpoint calls: the base URL, `credentials: "include"` for the refresh cookie, and body parsing that tolerates a 204 with nothing in it. Anything outside 2xx throws an `ApiRequestError`, which is what makes the generated hooks behave like query hooks — `error`, `retry` and `isSuccess` are all driven by a rejected fetcher. Adding an endpoint adds no code here.
+- [error.ts](apps/web/src/lib/api/error.ts) — that error, plus `payload()`, which picks the successful member out of a generated response union so a caller reads a `Session` rather than a `Session | void`.
+- [components/query](apps/web/src/components/query/index.tsx) — the `QueryClient` the whole tree shares, and the three defaults this site argues for: retry only what never arrived or broke on the way, no refetch on window focus, a minute of `staleTime`.
+
+`apps/api/openapi.json` is produced by [emit-openapi.ts](apps/api/src/swagger/emit-openapi.ts) from the same builder that serves `/docs`, in Nest's preview mode — the module graph is explored without instantiating a provider, so it needs no database, no secrets and no listening port.
 
 ### Authentication
 

@@ -33,14 +33,21 @@ export function LocaleSwitcher({ className }: { className?: string }) {
         const { short, full } = localeNames[locale];
 
         return (
-          <li
-            key={locale}
-            className={index > 0 ? "border-primary-deep/50 ml-2 border-l pl-2" : undefined}
-          >
+          <li key={locale} className="flex items-center">
+            {/* The divider between the two languages. It was a `border-l` on
+                this `<li>` until the links grew a 44px touch target, at which
+                point the border grew with them and a hairline meant to sit
+                between two words became a rule the height of the bar. As its
+                own element it is sized in `em` off the text it separates and
+                stays that hairline whatever the target around it is doing. */}
+            {index > 0 && (
+              <span aria-hidden="true" className="bg-primary-deep/50 mx-2 h-[1.1em] w-px" />
+            )}
+
             {/* The active language needs no styling of its own: `NavLink` lights
                 up whatever carries `aria-current`, so the state is declared once
                 and only in the place a screen reader also reads it. */}
-            <NavLink asChild variant="compact">
+            <NavLink asChild variant="compact" className="px-1">
               <Link
                 href={pathname}
                 locale={locale}

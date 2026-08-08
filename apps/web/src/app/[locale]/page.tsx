@@ -19,14 +19,20 @@ function HomeContent() {
   const t = useTranslations("home");
 
   return (
-    <main className="max-w-reading relative z-10 mx-auto flex min-h-screen flex-col justify-center gap-8 px-8 py-24">
+    <main className="max-w-reading compact:gap-8 compact:px-8 compact:py-24 relative z-10 mx-auto flex min-h-dvh flex-col justify-center gap-6 px-6 py-16">
       <p className="font-caps text-primary text-label tracking-eyebrow uppercase">{t("phase")}</p>
 
-      <h1 className="font-display text-foreground tracking-display text-5xl leading-tight uppercase">
+      {/* Fluid rather than stepped, and the only heading on the site that has to
+          be: "MoodNight" is one unbreakable word, so a size that does not fit
+          cannot wrap its way out of trouble — it just runs off the side. At 3rem
+          with 0.18em of tracking that word is around 430px wide, which no phone
+          has. The clamp tracks the viewport from about 360px to about 600px and
+          holds the prototype's size for everything above that. */}
+      <h1 className="font-display text-foreground tracking-display text-[clamp(2rem,9vw,3rem)] leading-tight uppercase">
         {t("title")}
       </h1>
 
-      <p className="text-muted-foreground text-xl">{t("tagline")}</p>
+      <p className="text-muted-foreground compact:text-xl text-lg">{t("tagline")}</p>
 
       <div className="border-border flex flex-wrap gap-3 border-t pt-8">
         {(

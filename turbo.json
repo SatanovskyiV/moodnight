@@ -2,7 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalEnv": ["NODE_ENV"],
-  "//": "Turbo runs tasks in strict env mode: a variable not named here is invisible to them. Connection strings and signing keys go in passThrough rather than globalEnv because they must not become part of a cache key — the build output does not depend on which database it will talk to or which secret it will sign with, and secrets do not belong in a hash.",
+  "//": "Turbo runs tasks in strict env mode: a variable not named here is invisible to them. Connection strings and signing keys go in passThrough rather than globalEnv because they must not become part of a cache key — the build output does not depend on which database it will talk to or which secret it will sign with, and secrets do not belong in a hash. On the `openapi` task: it writes apps/api/openapi.json and compiles apps/api to do it, so it needs @moodnight/db built first exactly as `build` does — which is the whole reason it is a turbo task and not a plain pnpm script. It is uncached because the document it writes lives inside the package it writes it from, making the task its own cache input; it runs on demand, not on every build.",
   "globalPassThroughEnv": [
     "DATABASE_URL",
     "DIRECT_URL",
@@ -16,6 +16,10 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "openapi": {
+      "dependsOn": ["^build"],
+      "cache": false
     },
     "dev": {
       "cache": false,

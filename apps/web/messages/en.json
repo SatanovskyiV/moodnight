@@ -10,10 +10,57 @@
     "authors": "Authors",
     "collections": "Collections",
     "about": "About",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…"
   },
   "localeSwitcher": {
     "label": "Language"
+  },
+  "signIn": {
+    "metaTitle": "Sign in",
+    "title": "Return to the hearth",
+    "subtitle": "Name yourself — and the candles will know you.",
+    "email": "Coffer of letters",
+    "emailPlaceholder": "name@domain.com",
+    "password": "Secret word",
+    "submit": "Enter the night",
+    "submitting": "Entering…",
+    "altPrompt": "First time here?",
+    "altLink": "Create your voice",
+    "error": {
+      "email": "That does not look like an address",
+      "password": "Speak the secret word",
+      "credentials": "The candles did not know that pair. Check the address and the secret word.",
+      "network": "Silence in answer — the server did not reply. Try again.",
+      "unexpected": "Something guttered out on our side. Try again."
+    }
+  },
+  "register": {
+    "metaTitle": "Create an account",
+    "title": "Become a singer",
+    "subtitle": "Leave your name in the book of shadows, and your word becomes part of the night.",
+    "name": "Poetic name",
+    "namePlaceholder": "e.g., Orysia",
+    "surname": "Family name",
+    "surnamePlaceholder": "e.g., Vechirnia",
+    "email": "Coffer of letters",
+    "emailPlaceholder": "name@domain.com",
+    "password": "Secret word",
+    "passwordHint": "At least eight characters.",
+    "submit": "Light your candle",
+    "submitting": "Lighting…",
+    "altPrompt": "Already have a name?",
+    "altLink": "Sign in",
+    "error": {
+      "name": "Name yourself",
+      "surname": "And your line",
+      "email": "That does not look like an address",
+      "password": "At least eight characters",
+      "taken": "A candle already burns at that address. Try signing in.",
+      "network": "Silence in answer — the server did not reply. Try again.",
+      "unexpected": "Something guttered out on our side. Try again."
+    }
   },
   "home": {
     "phase": "Phase 1",

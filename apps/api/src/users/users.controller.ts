@@ -83,6 +83,7 @@ export class UsersController {
   @Get()
   @Roles("EDITOR")
   @ApiOperation({
+    operationId: "listUsers",
     summary: "List all users",
     description: "Every user, newest first. Unpaginated. For editors and above.",
   })
@@ -99,6 +100,7 @@ export class UsersController {
   @Get(":id")
   @Roles("EDITOR")
   @ApiOperation({
+    operationId: "getUser",
     summary: "Get a user",
     description: "One user by id. For editors and above.",
   })
@@ -113,6 +115,7 @@ export class UsersController {
   @Post()
   @Roles("ADMIN")
   @ApiOperation({
+    operationId: "createUser",
     summary: "Create a user",
     description:
       "Emails are stored lowercased and must be unique. " +
@@ -135,6 +138,7 @@ export class UsersController {
   @Patch(":id")
   @Roles("ADMIN")
   @ApiOperation({
+    operationId: "updateUser",
     summary: "Update a user",
     description:
       "Changes only the fields present in the body; at least one is required. " +
@@ -162,6 +166,7 @@ export class UsersController {
   // this says so in the status line instead of leaving a client to discover it.
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
+    operationId: "deleteUser",
     summary: "Delete a user",
     description:
       "Permanent. Deleting a user that is already gone is a 404, not a no-op. " +

@@ -26,8 +26,32 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # apps/api/openapi.json and apps/web/src/lib/api/generated are committed,
+      # which is what lets apps/web be typechecked and built without booting the
+      # API against a database. The cost of committing them is that they can go
+      # stale: a controller changes, nobody regenerates, and the client keeps
+      # compiling against a contract the API no longer has. Regenerating here
+      # and failing on any difference is what pays it.
+      - run: pnpm api:generate
+
+      - name: Check the generated API client is up to date
+        run: |
+          if ! git diff --quiet --exit-code apps/api/openapi.json apps/web/src/lib/api; then
+            echo "::error::The OpenAPI document or the generated client is stale. Run 'pnpm api:generate' and commit the result."
+            git diff --stat apps/api/openapi.json apps/web/src/lib/api
+            exit 1
+          fi
+
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+      # `next build` inlines NEXT_PUBLIC_API_URL into the browser bundle, and
+      # apps/web/src/lib/api/request.ts refuses to build a production bundle
+      # rather than shipping a site that asks every visitor's own machine for the
+      # API. CI never calls this address — it only has to exist — so the local
+      # default stands in for it. The real one is set per Vercel project.
       - run: pnpm build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001

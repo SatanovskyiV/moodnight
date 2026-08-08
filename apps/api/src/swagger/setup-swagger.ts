@@ -1,8 +1,7 @@
 import { type INestApplication, Logger } from "@nestjs/common";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { SwaggerModule } from "@nestjs/swagger";
 
-import { REFRESH_COOKIE } from "../auth/refresh-cookie";
-import { buildComponentSchemas } from "./openapi-schemas";
+import { buildOpenApiDocument } from "./build-document";
 
 const DOCS_PATH = "docs";
 
@@ -16,7 +15,12 @@ const SWAGGER_UI_CDN = `https://cdn.jsdelivr.net/npm/swagger-ui-dist@${SWAGGER_U
 
 /**
  * Mounts Swagger UI at `/docs`, with the raw document at `/docs/json` (and
- * `/docs/yaml`) so a typed client can be generated from it later.
+ * `/docs/yaml`).
+ *
+ * The document itself is built by {@link buildOpenApiDocument}, which
+ * `emit-openapi.ts` also calls to produce the checked-in openapi.json that
+ * apps/web's client is generated from. Nothing here is on that path: codegen
+ * never starts a server, so the UI's quirks below cannot affect the client.
  *
  * The UI's CSS and JS come from a CDN rather than from the function. Swagger's
  * HTML template links them as files inside `swagger-ui-dist`, which Vercel's
@@ -29,31 +33,7 @@ const SWAGGER_UI_CDN = `https://cdn.jsdelivr.net/npm/swagger-ui-dist@${SWAGGER_U
  * reliable read if the UI is ever unavailable.
  */
 export function setupSwagger(app: INestApplication): void {
-  const config = new DocumentBuilder()
-    .setTitle("MoodNight API")
-    .setDescription(
-      "Read and write endpoints for the MoodNight poetry site. " +
-        "Response shapes come from the zod schemas in @moodnight/shared, " +
-        "the same ones the API validates against.",
-    )
-    .setVersion("0.0.0")
-    // Paste an access token into Swagger's Authorize box and the guarded
-    // routes become callable from the page. `/auth/login` returns one.
-    .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" }, "access-token")
-    // The refresh cookie. Declared so `/auth/refresh` and `/auth/logout` show
-    // what they read, though nothing needs typing in: the browser holds the
-    // cookie already and sends it with the request Swagger makes.
-    .addCookieAuth(REFRESH_COOKIE, { type: "apiKey", in: "cookie" }, REFRESH_COOKIE)
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
-  document.components ??= {};
-  document.components.schemas = {
-    ...document.components.schemas,
-    ...buildComponentSchemas(),
-  };
-
-  SwaggerModule.setup(DOCS_PATH, app, document, {
+  SwaggerModule.setup(DOCS_PATH, app, buildOpenApiDocument(app), {
     customSiteTitle: "MoodNight API",
     jsonDocumentUrl: `${DOCS_PATH}/json`,
     yamlDocumentUrl: `${DOCS_PATH}/yaml`,

@@ -8,6 +8,8 @@ import {
   UnifrakturMaguntia,
 } from "next/font/google";
 
+import { QueryProvider } from "@/components/query";
+import { SessionProvider } from "@/components/session";
 import { TopNav } from "@/components/top-nav";
 import { resolveLocale, type LocaleParams } from "@/i18n/resolve-locale";
 import { routing } from "@/i18n/routing";
@@ -89,8 +91,21 @@ export default async function LocaleLayout({
     >
       <body>
         <NextIntlClientProvider>
-          <TopNav />
-          {children}
+          {/* Inside the intl provider because the controls that read the session
+              are also the ones that need translating. It wraps `children` as
+              well as the bar: the session is the app's, not the nav's, and the
+              pages that come to depend on it must read the same one.
+
+              The query client is outside the session because the session is one
+              of its entries — `SessionProvider` calls `useQueryClient`, and
+              every page under it reaches the same cache, so a poem fetched by
+              one component is not fetched again by the next. */}
+          <QueryProvider>
+            <SessionProvider>
+              <TopNav />
+              {children}
+            </SessionProvider>
+          </QueryProvider>
         </NextIntlClientProvider>
       </body>
     </html>

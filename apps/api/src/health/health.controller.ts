@@ -9,6 +9,7 @@ import { zodRef } from "../swagger/openapi-schemas";
 export class HealthController {
   @Get()
   @ApiOperation({
+    operationId: "checkHealth",
     summary: "Liveness probe",
     description: "Answers as soon as the process is up. Touches no database.",
   })

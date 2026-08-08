@@ -186,11 +186,26 @@
 
   --drop-shadow-glow: 0 0 6px color-mix(in oklab, var(--accent-gold) 50%, transparent);
 
-  /* The prototype has exactly one breakpoint — 720px (prototype/styles.css:958),
-     not Tailwind's 768px `md`. Registering it as `compact:` means every ported
+  /* --- Breakpoints ---
+     The prototype has exactly one — 720px (prototype/styles.css:958), not
+     Tailwind's 768px `md`. Registering it as `compact:` means every ported
      screen collapses on the same pixel the prototype does, which is the whole
-     defence against the visual drift docs/ROADMAP.md warns about. */
-  --breakpoint-compact: 45rem;
+     defence against the visual drift docs/ROADMAP.md warns about.
+
+     `narrow:` is ours and has no prototype ancestor, because the prototype was
+     never opened on a phone: below it the top bar's wordmark cannot sit beside
+     the language switcher and the sign-in button on one line, so it stands down
+     to the sigil alone. 34rem rather than something nearer the real overflow
+     because every portrait phone in use is under 27rem — putting the threshold
+     well clear of them means no handset lands in the few pixels where the
+     estimate could be wrong.
+
+     Both are declared here, in rem, and both mean exactly what they say: `rem`
+     inside a media query always resolves against the initial 16px and never
+     against the `font-size` on <html> below, so the fluid root does not drag
+     the breakpoints around with it. */
+  --breakpoint-narrow: 34rem; /* 544px — phone vs. everything else */
+  --breakpoint-compact: 45rem; /* 720px — the prototype's own */
 }
 
 @layer base {
@@ -202,10 +217,34 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
-    font-size: 18px;
+    /* The prototype's flat 18px, but only once there is room for it.
+       Practically every measurement on the site is a rem off this one number —
+       the type scale, the tracking, Tailwind's whole spacing ladder — so
+       scaling the root is what makes a phone get a proportionally smaller
+       version of this design rather than the desktop one with a handful of
+       classes patched over it.
+
+       The floor is 16px twice over: this is a site for reading poetry, and iOS
+       Safari zooms the page whenever a focused <input> computes under 16px. It
+       is reached at 320px wide (the narrowest phone still worth supporting) and
+       the full 18px returns at 655px, so tablets are never scaled down. */
+    font-size: clamp(16px, 14.4px + 0.55vw, 18px);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Only on <html>, never on <body>. The clipping propagates from the root to
+     the viewport either way, but an `overflow` other than `visible` on <body>
+     would make <body> the nearest scroll container for the sticky top bar —
+     and <body> is as tall as its content, so it never scrolls and the bar
+     would never stick. */
+  html {
     overflow-x: hidden;
+
+    /* The bar is sticky, so a jump to `#feed` would otherwise land the heading
+       underneath it. Roughly the bar's own height, which is the most this can
+       be without leaving a visible gap above the target. */
+    scroll-padding-top: 6rem;
   }
 
   /* Hand-written on purpose — Tailwind utilities cannot express the layered
@@ -214,7 +253,12 @@
     background:
       radial-gradient(ellipse at 50% 0%, rgba(122, 95, 58, 0.18) 0%, transparent 50%),
       radial-gradient(ellipse at 80% 80%, rgba(90, 26, 26, 0.1) 0%, transparent 60%), var(--ink);
+    /* `dvh` and not `vh`: on a phone `100vh` is the viewport with the browser's
+       address bar retracted, which is taller than what is actually on screen
+       when the page first paints. The `vh` line stays underneath it as the
+       fallback for anything that does not know `dvh`. */
     min-height: 100vh;
+    min-height: 100dvh;
     position: relative;
   }
 
@@ -238,5 +282,16 @@
     pointer-events: none;
     z-index: 2;
     background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 0.7) 100%);
+  }
+
+  /* The vignette's falloff is proportional to the viewport, so it is no darker
+     on a phone — but the copy is, because a phone's gutters are a fraction of a
+     desktop's and the text now runs into the part the gradient is dimming.
+     Pushing the clear zone out and easing the corners keeps the mood without
+     putting a shadow over the first and last word of every line. */
+  @media (width < 45rem) {
+    body::after {
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.55) 100%);
+    }
   }
 }

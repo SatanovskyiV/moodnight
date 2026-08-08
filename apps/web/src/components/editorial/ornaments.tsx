@@ -37,3 +37,39 @@ export function Sigil({ size = 28, className }: OrnamentProps) {
     </svg>
   );
 }
+
+/**
+ * The wax seal above the auth card's heading — the {@link Sigil}'s ceremonial
+ * cousin: two rings, four compass ticks, and a nested double lozenge.
+ *
+ * Ported from prototype/ornaments.jsx:48-58, with the same substitution the
+ * sigil makes — the prototype's literal `#0a0805` centre becomes `var(--ink)`,
+ * so the punched-out middle follows the page rather than staying that one brown
+ * if the theme ever moves.
+ */
+export function Seal({ size = 64, className }: OrnamentProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="32" cy="32" r="28" />
+      <circle cx="32" cy="32" r="22" strokeWidth="0.6" opacity="0.5" />
+      <path
+        d="M32 6 L32 14 M32 50 L32 58 M6 32 L14 32 M50 32 L58 32"
+        strokeWidth="0.6"
+        opacity="0.5"
+      />
+      <path d="M32 16 L40 32 L32 48 L24 32 Z" fill="currentColor" opacity="0.4" />
+      <path d="M32 22 L36 32 L32 42 L28 32 Z" fill="currentColor" />
+      <circle cx="32" cy="32" r="2.5" fill="var(--ink)" />
+    </svg>
+  );
+}

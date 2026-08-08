@@ -1,0 +1,655 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Answers as soon as the process is up. Touches no database.",
+        "operationId": "checkHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The service is running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": ["health"]
+      }
+    },
+    "/users": {
+      "get": {
+        "description": "Every user, newest first. Unpaginated. For editors and above.",
+        "operationId": "listUsers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The users.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The account's role is not high enough."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List all users",
+        "tags": ["users"]
+      },
+      "post": {
+        "description": "Emails are stored lowercased and must be unique. `role` may be omitted, in which case the account is an AUTHOR; only a root account may ask for ROOT, and ROOT is a singleton, so a second one is a 409. `password` may be omitted too — the account then exists but cannot sign in until one is set.",
+        "operationId": "createUser",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not match the schema."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The account's role is not high enough."
+          },
+          "409": {
+            "description": "That email is taken, or a root account already exists."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a user",
+        "tags": ["users"]
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "description": "One user by id. For editors and above.",
+        "operationId": "getUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The user's id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The id is not a UUID."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The account's role is not high enough."
+          },
+          "404": {
+            "description": "No user has that id."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get a user",
+        "tags": ["users"]
+      },
+      "patch": {
+        "description": "Changes only the fields present in the body; at least one is required. Ids, timestamps and passwords are not writable here. Promoting an account to ROOT requires both that no other account holds it and that the caller is the root; so does editing the root account itself.",
+        "operationId": "updateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The user's id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The id or the body does not match the schema."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The account's role is not high enough."
+          },
+          "404": {
+            "description": "No user has that id."
+          },
+          "409": {
+            "description": "That email is taken, or a root account already exists."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Update a user",
+        "tags": ["users"]
+      },
+      "delete": {
+        "description": "Permanent. Deleting a user that is already gone is a 404, not a no-op. The root account can only be deleted by itself.",
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The user's id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The user is gone."
+          },
+          "400": {
+            "description": "The id is not a UUID."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The account's role is not high enough."
+          },
+          "404": {
+            "description": "No user has that id."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a user",
+        "tags": ["users"]
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "description": "Creates an account and signs it in. New accounts are always AUTHOR — this endpoint has no way to ask for anything else. The response carries a short-lived access token; the refresh token is set as an httpOnly cookie.",
+        "operationId": "register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Register"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not match the schema."
+          },
+          "409": {
+            "description": "That email is already registered."
+          }
+        },
+        "summary": "Register an account",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Exchanges an email and password for a session. Every failure — unknown address, no password set, wrong password — is the same 401 taking the same time, so this endpoint cannot be used to discover who has an account.",
+        "operationId": "login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not match the schema."
+          },
+          "401": {
+            "description": "The credentials are not valid."
+          }
+        },
+        "summary": "Sign in",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Reads the refresh cookie and issues a new access token, re-setting the cookie with a fresh lifetime. The role comes from the account as it is now, so a change of role takes effect on the next renewal rather than when the cookie eventually expires.",
+        "operationId": "refresh",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The renewed session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The cookie is missing, expired, or revoked."
+          }
+        },
+        "security": [
+          {
+            "moodnight_refresh": []
+          }
+        ],
+        "summary": "Renew the access token",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Revokes every refresh token for the account — on every device, which is the deliberate trade for storing no sessions — and clears the cookie. Access tokens already issued keep working until they expire, which is minutes.",
+        "operationId": "logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "The session is over."
+          },
+          "401": {
+            "description": "The cookie is missing, expired, or already revoked."
+          }
+        },
+        "security": [
+          {
+            "moodnight_refresh": []
+          }
+        ],
+        "summary": "Sign out",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "description": "Read from the database on every call, so it is never a stale copy of the token.",
+        "operationId": "getCurrentUser",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The current user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid access token."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "The signed-in account",
+        "tags": ["auth"]
+      }
+    }
+  },
+  "info": {
+    "title": "MoodNight API",
+    "description": "Read and write endpoints for the MoodNight poetry site. Response shapes come from the zod schemas in @moodnight/shared, the same ones the API validates against.",
+    "version": "0.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "access-token": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      },
+      "moodnight_refresh": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "moodnight_refresh"
+      }
+    },
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok"]
+          },
+          "service": {
+            "type": "string",
+            "description": "Which service answered.",
+            "example": "moodnight-api"
+          },
+          "uptime": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Whole seconds since the process started.",
+            "example": 42
+          }
+        },
+        "required": ["status", "service", "uptime"],
+        "additionalProperties": false,
+        "description": "Liveness payload returned by GET /health."
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "UUIDv7 — time-ordered, so it sorts by creation."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Login identity. Unique.",
+            "example": "poet@moodnight.dev"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Леся"
+          },
+          "surname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Українка"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["ROOT", "ADMIN", "EDITOR", "AUTHOR"],
+            "description": "What the account is allowed to do. ROOT is the site's owner and there is at most one of them, ADMIN manages users, EDITOR moderates the queue, AUTHOR writes their own poems.",
+            "example": "AUTHOR"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When the account was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When the account was last written to."
+          }
+        },
+        "required": ["id", "email", "name", "surname", "role", "createdAt", "updatedAt"],
+        "additionalProperties": false,
+        "description": "A registered user."
+      },
+      "CreateUser": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Login identity. Unique.",
+            "example": "poet@moodnight.dev"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Леся"
+          },
+          "surname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Українка"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["ROOT", "ADMIN", "EDITOR", "AUTHOR"],
+            "description": "What the account is allowed to do. ROOT is the site's owner and there is at most one of them, ADMIN manages users, EDITOR moderates the queue, AUTHOR writes their own poems.",
+            "example": "AUTHOR"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128,
+            "description": "At least 8 characters, at most 128.",
+            "example": "свіча-у-вікні-7"
+          }
+        },
+        "required": ["email", "name", "surname"],
+        "additionalProperties": false,
+        "description": "The fields needed to create a user."
+      },
+      "UpdateUser": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Login identity. Unique.",
+            "example": "poet@moodnight.dev"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Леся"
+          },
+          "surname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Українка"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["ROOT", "ADMIN", "EDITOR", "AUTHOR"],
+            "description": "What the account is allowed to do. ROOT is the site's owner and there is at most one of them, ADMIN manages users, EDITOR moderates the queue, AUTHOR writes their own poems.",
+            "example": "AUTHOR"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The fields to change on a user. At least one is required."
+      },
+      "Register": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Login identity. Unique.",
+            "example": "poet@moodnight.dev"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Леся"
+          },
+          "surname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Українка"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128,
+            "description": "At least 8 characters, at most 128.",
+            "example": "свіча-у-вікні-7"
+          }
+        },
+        "required": ["email", "name", "surname", "password"],
+        "additionalProperties": false,
+        "description": "The fields needed to register an account."
+      },
+      "Login": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "example": "poet@moodnight.dev"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["email", "password"],
+        "additionalProperties": false,
+        "description": "Credentials for signing in."
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Bearer token for the Authorization header."
+          },
+          "expiresIn": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "description": "Seconds until the access token expires.",
+            "example": 900
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        },
+        "required": ["accessToken", "expiresIn", "user"],
+        "additionalProperties": false,
+        "description": "A signed-in session."
+      }
+    }
+  }
+}

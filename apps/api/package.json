@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "openapi": "nest build && node dist/swagger/emit-openapi.js && prettier --write openapi.json",
     "dev": "nest start --watch",
     "start": "node dist/main",
     "typecheck": "tsc -p tsconfig.json --noEmit",

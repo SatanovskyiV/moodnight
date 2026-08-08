@@ -52,6 +52,7 @@ export class AuthController {
 
   @Post("register")
   @ApiOperation({
+    operationId: "register",
     summary: "Register an account",
     description:
       "Creates an account and signs it in. New accounts are always AUTHOR — " +
@@ -74,6 +75,7 @@ export class AuthController {
   // it exchanges credentials for a token.
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
+    operationId: "login",
     summary: "Sign in",
     description:
       "Exchanges an email and password for a session. Every failure — unknown " +
@@ -96,6 +98,7 @@ export class AuthController {
   @UseGuards(JwtRefreshGuard)
   @ApiCookieAuth(REFRESH_COOKIE)
   @ApiOperation({
+    operationId: "refresh",
     summary: "Renew the access token",
     description:
       "Reads the refresh cookie and issues a new access token, re-setting the " +
@@ -117,6 +120,7 @@ export class AuthController {
   @UseGuards(JwtRefreshGuard)
   @ApiCookieAuth(REFRESH_COOKIE)
   @ApiOperation({
+    operationId: "logout",
     summary: "Sign out",
     description:
       "Revokes every refresh token for the account — on every device, which is " +
@@ -141,6 +145,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("access-token")
   @ApiOperation({
+    operationId: "getCurrentUser",
     summary: "The signed-in account",
     description: "Read from the database on every call, so it is never a stale copy of the token.",
   })
