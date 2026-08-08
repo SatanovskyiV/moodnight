@@ -10,6 +10,7 @@ import {
 
 import { QueryProvider } from "@/components/query";
 import { SessionProvider } from "@/components/session";
+import { sessionHintScript } from "@/components/session/hint";
 import { TopNav } from "@/components/top-nav";
 import { resolveLocale, type LocaleParams } from "@/i18n/resolve-locale";
 import { routing } from "@/i18n/routing";
@@ -90,6 +91,15 @@ export default async function LocaleLayout({
       suppressHydrationWarning
     >
       <body>
+        {/* First thing in the body, and blocking on purpose: it marks the
+            document for a reader who is already signed in, in the only window
+            available for it — after this HTML was built (at deploy time, for
+            everybody) and before the bar below is painted. Nothing after it has
+            been parsed yet, so there is no flash of the wrong control to
+            correct. `suppressHydrationWarning` on <html> above is what lets it
+            write there; see components/session/hint.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: sessionHintScript }} />
+
         <NextIntlClientProvider>
           {/* Inside the intl provider because the controls that read the session
               are also the ones that need translating. It wraps `children` as

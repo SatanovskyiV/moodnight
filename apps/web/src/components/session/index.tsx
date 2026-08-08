@@ -7,6 +7,14 @@ import { createContext, useCallback, useContext, useSyncExternalStore } from "re
 import { logout, refresh } from "@/lib/api/generated/auth";
 import { isStatus, payload } from "@/lib/api/error";
 
+import {
+  hintUnknownOnServer,
+  readHint,
+  type SessionHint,
+  subscribeToHint,
+  writeHint,
+} from "./hint";
+
 /**
  * Whether anybody is signed in, as the browser understands it.
  *
@@ -15,6 +23,13 @@ import { isStatus, payload } from "@/lib/api/error";
  * a state of its own rather than a boolean beside `signedIn` because the user
  * object genuinely is not available during it, and a type that admits that is
  * one a consumer cannot accidentally read through.
+ *
+ * Three states and not four. "Storage has not been read yet" is a fact about
+ * this render, not about who is reading, and only a component that must emit
+ * markup before either question can be answered has any use for it — which is
+ * the bar's auth control and nothing else. It asks {@link useSessionHint}
+ * instead, and every page added later is spared a case whose answer would always
+ * have been "treat it like restoring" or "do not care".
  */
 export type SessionState =
   { status: "signedOut" } | { status: "restoring" } | { status: "signedIn"; session: Session };
@@ -40,84 +55,22 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export const sessionQueryKey = ["session"] as const;
 
 /**
- * A flag saying a session may exist — deliberately not the session itself.
+ * What this origin's storage says, including its not having been read yet.
  *
- * Two things fall out of having it, and neither is possible without something
- * readable on *this* origin. The refresh token is httpOnly and scoped to the
- * API's `/auth` path, and in production the API is a different domain
- * altogether (see refreshCookieOptions in apps/api), so nothing here — least of
- * all a Server Component — can look at it and tell.
+ * A second way in, for the one component that needs the answer *before* there
+ * can be a session to ask about. The nav's auth control is emitted into HTML
+ * built at deploy time for every reader, so on that first pass it is not
+ * deciding anything — it renders both controls and lets the pre-paint script's
+ * attribute choose. That is a question about hydration, so it is put to the
+ * store rather than to {@link useSession}, which answers a different one.
  *
- * 1. **Anonymous readers cost nothing.** Without a hint, every page view by
- *    every visitor who has never signed in would spend an API call to be told
- *    401. That is a serverless invocation per page view on a site whose entire
- *    cost model is static delivery. It is the query's `enabled`, so react-query
- *    does not so much as construct the request.
- * 2. **A returning reader's nav is right immediately.** The hint is readable
- *    synchronously, so the first render after hydration already knows to offer
- *    "sign out", instead of showing the wrong control until the network answers.
- *
- * It is not a credential and forging it achieves nothing: the API still demands
- * the cookie, and a hint with no cookie behind it earns a 401 and is cleared.
+ * The cost of keeping the two apart is one extra entry in a module-level `Set`,
+ * since this subscribes alongside {@link SessionProvider}. The cost of merging
+ * them would be a fourth case in {@link SessionState}, carried by every page
+ * that ever reads it.
  */
-const HINT_KEY = "moodnight.session";
-
-/**
- * Everything currently rendering the hint.
- *
- * `useSyncExternalStore` wants a way to be told the store changed, and unlike a
- * `storage` event — which fires only in *other* tabs — this fires in the one
- * that made the change. It has to: the hint is what enables the refresh query,
- * so clearing it on sign-out is what stops the cache from immediately trying to
- * restore the session that was just ended.
- */
-const listeners = new Set<() => void>();
-
-function subscribeToHint(listener: () => void): () => void {
-  listeners.add(listener);
-
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-/** Storage throws in Safari's private mode rather than being absent. */
-function readHint(): boolean {
-  try {
-    return window.localStorage.getItem(HINT_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * What the server must assume, having no storage to consult.
- *
- * Reading the hint through `useSyncExternalStore` rather than in a `useState`
- * initialiser is what keeps hydration honest: the server has no storage, so it
- * must render the signed-out bar; an initialiser would read the real value on
- * the client and hydrate different markup than the server sent. This hook is
- * built for precisely that split — it renders this snapshot while hydrating and
- * reconciles to the client's value immediately after, in one extra render rather
- * than a mismatch.
- */
-const noHintOnServer = () => false;
-
-function writeHint(exists: boolean): void {
-  try {
-    if (exists) {
-      window.localStorage.setItem(HINT_KEY, "1");
-    } else {
-      window.localStorage.removeItem(HINT_KEY);
-    }
-  } catch {
-    // Storage denied. The session still works for this page; it just will not be
-    // recognised after a reload, which is the correct degradation.
-  }
-
-  for (const listener of listeners) {
-    listener();
-  }
+export function useSessionHint(): SessionHint {
+  return useSyncExternalStore(subscribeToHint, readHint, hintUnknownOnServer);
 }
 
 /**
@@ -129,18 +82,20 @@ function writeHint(exists: boolean): void {
  * client island, the pages stay static, and the query starts disabled on both
  * sides of hydration so the two agree before any storage is read.
  *
- * That starting value is also why the prerendered HTML offers "sign in": it is
- * the only control that still works with JavaScript disabled, and being briefly
- * wrong for a signed-in reader is a better failure than a nav that can never be
- * anything.
+ * The prerendered HTML cannot name a reader, and this provider does not pretend
+ * to: until storage has been read it reports `signedOut`, which is the only
+ * honest answer available to a tree with nothing to go on. Sparing a returning
+ * member the sight of the wrong control in the meantime is a rendering problem
+ * rather than a session one, and it is solved where it shows up — see
+ * `useSessionHint` above, and the bar's auth control.
  *
  * What this no longer does is keep a state machine of its own. The session is a
  * cache entry, `restoring` is that entry being fetched, and signing in is a
- * write to it — so the three states below are read off react-query rather than
+ * write to it — so the states below are read off react-query rather than
  * tracked in parallel with it, and there is no way for the two to disagree.
  */
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const hintExists = useSyncExternalStore(subscribeToHint, readHint, noHintOnServer);
+  const hint = useSessionHint();
   const queryClient = useQueryClient();
 
   const { data: session, isPending } = useQuery({
@@ -161,7 +116,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         throw error;
       }
     },
-    enabled: hintExists,
+    enabled: hint === "present",
     // `/auth/refresh` is a POST because it rotates the cookie, but it is a read
     // as far as this app is concerned — "who is this?" — so it is a query, and
     // the generated `useRefresh` mutation is deliberately not what is used. Only
@@ -205,10 +160,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // confirmed or what sign-in just established. Only in its absence does the
   // hint get to speak, and only for as long as the query it enabled is still
   // in flight — once that has settled without a session, the reader is signed
-  // out, whatever storage believes.
+  // out, whatever storage believes. `unknown` falls through to signed out for
+  // the same reason: nothing has been read, so nothing can be claimed here.
   const state: SessionState = session
     ? { status: "signedIn", session }
-    : hintExists && isPending
+    : hint === "present" && isPending
       ? { status: "restoring" }
       : { status: "signedOut" };
 
