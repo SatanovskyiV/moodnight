@@ -2,7 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalEnv": ["NODE_ENV"],
-  "//": "Turbo runs tasks in strict env mode: a variable not named here is invisible to them. Connection strings and signing keys go in passThrough rather than globalEnv because they must not become part of a cache key — the build output does not depend on which database it will talk to or which secret it will sign with, and secrets do not belong in a hash. On the `openapi` task: it writes apps/api/openapi.json and compiles apps/api to do it, so it needs @moodnight/db built first exactly as `build` does — which is the whole reason it is a turbo task and not a plain pnpm script. It is uncached because the document it writes lives inside the package it writes it from, making the task its own cache input; it runs on demand, not on every build.",
+  "//": "Turbo runs tasks in strict env mode: a variable not named here is invisible to them. Connection strings and signing keys go in passThrough rather than globalEnv because they must not become part of a cache key — the build output does not depend on which database it will talk to or which secret it will sign with, and secrets do not belong in a hash. API_ORIGIN is the opposite case on both counts, which is why it is in `env` on the build task: apps/web bakes it into the /api rewrite in routes-manifest.json, so it genuinely changes the output and a cached build made against a different API would otherwise be restored over it. It also has to be named at all — framework inference allows NEXT_PUBLIC_* through for free, so the variable this one replaced never needed an entry here and this one does. Getting that wrong is a build that fails, not a site that misbehaves, which is the trade next.config.ts's guard is making. On the `openapi` task: it writes apps/api/openapi.json and compiles apps/api to do it, so it needs @moodnight/db built first exactly as `build` does — which is the whole reason it is a turbo task and not a plain pnpm script. It is uncached because the document it writes lives inside the package it writes it from, making the task its own cache input; it runs on demand, not on every build.",
   "globalPassThroughEnv": [
     "DATABASE_URL",
     "DIRECT_URL",
@@ -15,6 +15,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["API_ORIGIN"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "openapi": {
