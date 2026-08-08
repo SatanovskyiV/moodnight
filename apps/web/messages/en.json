@@ -65,6 +65,17 @@
   "home": {
     "phase": "Phase 1",
     "title": "MoodNight",
-    "tagline": "The frame is up. Theme, type and tokens are in place — the poetry follows."
+    "tagline": "The frame is up. Theme, type and tokens are in place — the poetry follows.",
+    "welcome": {
+      "eyebrow": "The candles know you",
+      "line": "Your candle burns again. The night is listening.",
+      "since": "In the book of shadows since {date, date, long}",
+      "roles": {
+        "ROOT": "Keeper of the hearth",
+        "ADMIN": "Warden of names",
+        "EDITOR": "Reader of the queue",
+        "AUTHOR": "Singer"
+      }
+    }
   }
 }

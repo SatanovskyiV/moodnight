@@ -17,5 +17,12 @@ export default getRequestConfig(async ({ requestLocale }) => {
   return {
     locale,
     messages: (await import(`../../messages/${locale}.json`)).default,
+    // Every date on this site belongs to the same group of poets in the same
+    // place, so they are all told in that place's time rather than in each
+    // reader's. Without this, next-intl falls back to whatever the runtime
+    // happens to be in — UTC in a Vercel function, the reader's own zone in the
+    // browser — and the same timestamp could be rendered as two different days
+    // by the server and by the component that re-renders it.
+    timeZone: "Europe/Kyiv",
   };
 });

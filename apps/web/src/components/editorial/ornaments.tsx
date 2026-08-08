@@ -15,6 +15,22 @@ type OrnamentProps = {
   className?: string;
 };
 
+/**
+ * The two halves of a rule that runs into a curl and ends in a bead, ported from
+ * prototype/ornaments.jsx:20-36. They frame a line of type — one on each side —
+ * and are a mirrored pair rather than one glyph flipped in CSS because that is
+ * how the prototype draws them, and a `scale-x-[-1]` would also flip the stroke
+ * ends of anything a caller nests inside.
+ *
+ * Wider than they are tall by design, so they are sized by width alone: give the
+ * caller's class a `w-*` and the `viewBox` scales the height with it.
+ */
+type FlourishProps = {
+  width?: number;
+  height?: number;
+  className?: string;
+};
+
 export function Sigil({ size = 28, className }: OrnamentProps) {
   return (
     <svg
@@ -70,6 +86,48 @@ export function Seal({ size = 64, className }: OrnamentProps) {
       <path d="M32 16 L40 32 L32 48 L24 32 Z" fill="currentColor" opacity="0.4" />
       <path d="M32 22 L36 32 L32 42 L28 32 Z" fill="currentColor" />
       <circle cx="32" cy="32" r="2.5" fill="var(--ink)" />
+    </svg>
+  );
+}
+
+export function FlourishLeft({ width = 80, height = 14, className }: FlourishProps) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 80 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M0 7 L60 7" />
+      <path d="M55 7 C 60 7, 62 4, 66 4 C 70 4, 72 7, 72 7" />
+      <path d="M55 7 C 60 7, 62 10, 66 10 C 70 10, 72 7, 72 7" />
+      <circle cx="74" cy="7" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function FlourishRight({ width = 80, height = 14, className }: FlourishProps) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 80 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M80 7 L20 7" />
+      <path d="M25 7 C 20 7, 18 4, 14 4 C 10 4, 8 7, 8 7" />
+      <path d="M25 7 C 20 7, 18 10, 14 10 C 10 10, 8 7, 8 7" />
+      <circle cx="6" cy="7" r="1.5" fill="currentColor" />
     </svg>
   );
 }
