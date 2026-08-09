@@ -1,3 +1,5 @@
+import type { CellData, RowData, TableFeatures } from "@tanstack/react-table";
+
 import type uk from "./messages/uk.json";
 import type { routing } from "./src/i18n/routing";
 
@@ -15,5 +17,37 @@ declare module "next-intl" {
   interface AppConfig {
     Locale: (typeof routing.locales)[number];
     Messages: typeof uk;
+  }
+}
+
+/**
+ * The two things this site needs to say about a column that TanStack has no
+ * opinion on. `meta` is the sanctioned place for them — the alternative is a
+ * parallel record keyed by column id, which is the same data with a second
+ * chance to fall out of step with the columns it describes.
+ *
+ * The type parameters have to be restated exactly as table-core declares them
+ * (`types/ColumnDef.d.ts`), constraints and default included, or TypeScript
+ * refuses the augmentation rather than merging it. They are unused here on
+ * purpose; the `_` prefix is what the repo's `no-unused-vars` rule accepts.
+ */
+declare module "@tanstack/react-table" {
+  interface ColumnMeta<
+    in out _TFeatures extends TableFeatures,
+    in out _TData extends RowData,
+    _TValue extends CellData = CellData,
+  > {
+    /**
+     * The width below which this column is not worth its share of the screen.
+     * Five columns do not fit a 375px phone, and a table that scrolls sideways
+     * hides the answer rather than the detail — so each list says which of its
+     * columns are the answer and which are the detail.
+     *
+     * Read by `ListTable`, which turns it into the one class Tailwind can see.
+     */
+    hideBelow?: "narrow" | "compact";
+
+    /** Ranged right instead of left — for counts and dates. */
+    align?: "end";
   }
 }

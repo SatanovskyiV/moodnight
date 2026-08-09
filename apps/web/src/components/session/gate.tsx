@@ -109,8 +109,14 @@ function SessionPanel({
  * for `/auth/refresh` to say who they are. It lives here rather than there
  * because this is the file about not being through the door yet, and because two
  * copies of a rite are two rites.
+ *
+ * `label` is how a third place borrows it without becoming a fourth rite. The
+ * default line — "Свічі пригадують тебе" — is about the *session*, and a table
+ * waiting for its first page is waiting for something else; a list passes its own
+ * sentence and gets the same seal turning above it. Everything else about the
+ * wait is deliberately not configurable.
  */
-export function Restoring({ className }: { className?: string }) {
+export function Restoring({ className, label }: { className?: string; label?: string }) {
   const t = useTranslations("access");
 
   return (
@@ -135,7 +141,7 @@ export function Restoring({ className }: { className?: string }) {
       </span>
 
       <p className="font-caps text-primary/70 text-label tracking-eyebrow flex flex-col items-center gap-5 uppercase">
-        <span className="-mr-[0.4em]">{t("restoring")}</span>
+        <span className="-mr-[0.4em]">{label ?? t("restoring")}</span>
 
         {/* The ellipsis, in the site's own alphabet — three sparks lighting in
             turn. `motion-safe:` covers the stagger too: without it they simply

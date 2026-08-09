@@ -1,3 +1,4 @@
+import { heldAccessToken } from "./access-token";
 import { ApiRequestError } from "./error";
 
 /**
@@ -50,6 +51,14 @@ const API_BASE =
  * override it. None do, and none should — but the ordering says which one is
  * the default and which is the instruction.
  *
+ * **The access token rides here too**, out of ./access-token, because the API
+ * reads it from the `Authorization` header and from nowhere else — the refresh
+ * cookie is pathed `/api/auth` and never reaches `/api/users`. Attaching it in
+ * this one place is what makes every generated endpoint authenticated without a
+ * line of code per endpoint, in exactly the way the error handling below is.
+ * An unauthenticated call is one made while nobody is signed in, not one that
+ * opted out.
+ *
  * **Anything that is not a 2xx throws an {@link ApiRequestError}**, which is
  * what makes the generated react-query hooks work as react-query hooks: a
  * rejected query function is the only thing that populates `error`, stops a
@@ -58,9 +67,23 @@ const API_BASE =
  */
 export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const token = heldAccessToken();
 
   try {
-    response = await fetch(`${API_BASE}${url}`, { credentials: "include", ...init });
+    response = await fetch(`${API_BASE}${url}`, {
+      credentials: "include",
+      ...init,
+      // Spread after `init` because `init` carries a `headers` of its own —
+      // orval's generated writes set `Content-Type` there — and spreading the
+      // whole object would drop the token along with it. Merged rather than
+      // replaced, and `Authorization` written first so a caller could still
+      // override it, which is the same ordering rule `credentials` follows above.
+      //
+      // Absent, not empty, when there is no session: `Authorization: Bearer null`
+      // is a malformed credential, and the public routes would start being asked
+      // to reject one instead of never being offered one.
+      headers: token ? { Authorization: `Bearer ${token}`, ...init?.headers } : init?.headers,
+    });
   } catch {
     // `fetch` rejects only for a request that never got an answer — the API is
     // down, DNS failed, the origin was refused by CORS. Every answer the server

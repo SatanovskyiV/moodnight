@@ -41,8 +41,12 @@ export const MAX_PER_PAGE = 100;
  * Long enough for a full name and an email address, short enough to bound the
  * query it turns into: a search is split on whitespace and each term costs one
  * `ILIKE` per searchable column.
+ *
+ * Exported because a search box has to enforce it too. Without a `maxLength` on
+ * the input the 101st character is dropped by this schema on the way past, and
+ * what the reader sees is a search that silently stops responding to typing.
  */
-const MAX_SEARCH_LENGTH = 100;
+export const MAX_SEARCH_LENGTH = 100;
 
 /**
  * The parameter names the framework itself owns.

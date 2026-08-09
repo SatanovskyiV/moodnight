@@ -4,6 +4,7 @@ import type { Session } from "@moodnight/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
 
+import { holdAccessToken } from "@/lib/api/access-token";
 import { logout, refresh } from "@/lib/api/generated/auth";
 import { isStatus, payload } from "@/lib/api/error";
 
@@ -155,6 +156,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     },
     [queryClient],
   );
+
+  // Handed to the transport so that `request` can put it on the `Authorization`
+  // header — see lib/api/access-token.ts for why it is a module variable and
+  // not a parameter.
+  //
+  // **During render, deliberately, and not in an effect.** React runs a child's
+  // effects before its parent's, so a table mounting on the same render the
+  // session lands would fire its first request from its own effect while this
+  // provider's had not run yet — one unauthenticated call per page load, arriving
+  // as a 401 that nothing did wrong. Assigning here happens before any child of
+  // this provider renders at all. It is a write to a module during render, which
+  // is ordinarily the thing not to do; it is safe because it is idempotent —
+  // StrictMode's double render assigns the same token twice — and because
+  // nothing reads it during rendering, only later, from a fetch.
+  holdAccessToken(session?.accessToken ?? null);
 
   // A session in the cache always wins: it is either what the network just
   // confirmed or what sign-in just established. Only in its absence does the

@@ -1,3 +1,4 @@
+import { AreaHeading } from "@/components/area/heading";
 import { Seal } from "@/components/editorial/ornaments";
 
 /**
@@ -16,11 +17,7 @@ import { Seal } from "@/components/editorial/ornaments";
 export function AreaPlaceholder({ title, line }: { title: string; line: string }) {
   return (
     <section className="flex flex-col gap-8">
-      <header className="border-primary/15 compact:pb-6 border-b pb-5">
-        <h1 className="font-display text-foreground tracking-display text-[clamp(1.4rem,5vw,2rem)] leading-tight uppercase">
-          {title}
-        </h1>
-      </header>
+      <AreaHeading title={title} />
 
       {/* The prototype's auth pool, in miniature: lifted ink inside a gold
           hairline. It marks the block as scaffolding without making a spectacle

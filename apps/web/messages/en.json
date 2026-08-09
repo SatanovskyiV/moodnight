@@ -103,12 +103,46 @@
       }
     }
   },
+  "list": {
+    "search": "Search",
+    "clear": "Clear all",
+    "loading": "The night is turning the pages",
+    "page": "Page {page} of {pageCount}",
+    "perPage": "{count} at a time",
+    "previous": "Previous page",
+    "next": "Next page",
+    "noMatches": "Nothing answered",
+    "noMatchesLine": "No row matches the filters. Try other words, or clear everything.",
+    "retry": "Try again",
+    "error": {
+      "network": "Silence in answer — the server did not speak. Try again.",
+      "expired": "Your candle has guttered. Sign in again.",
+      "forbidden": "Another key keeps this list.",
+      "rejected": "The candles did not understand that request. Clear the filters and try again.",
+      "unexpected": "Something guttered out on our side. Try again."
+    }
+  },
   "admin": {
     "title": "Administration",
     "sections": {
       "users": {
         "title": "Names",
-        "line": "This is everyone whose candle burns: who is given a key, and whose candle is dimmed."
+        "line": "This is everyone whose candle burns: who is given a key, and whose candle is dimmed.",
+        "searchPlaceholder": "Name, family name or coffer…",
+        "loading": "The candles are being counted",
+        "total": "{count, plural, one {# name} other {# names}}",
+        "empty": "No candle has been lit yet",
+        "emptyLine": "Everyone whose candle burns will appear here.",
+        "columns": {
+          "name": "Name",
+          "surname": "Family name",
+          "email": "Coffer",
+          "role": "Key",
+          "createdAt": "Lit"
+        },
+        "filters": {
+          "role": "Key"
+        }
       }
     }
   }
