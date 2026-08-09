@@ -3,8 +3,9 @@
 import type { User } from "@moodnight/shared";
 import { useTranslations } from "next-intl";
 
-import { FlourishLeft, FlourishRight, Seal } from "@/components/editorial/ornaments";
+import { FlourishLeft, FlourishRight, Seal, Spark } from "@/components/editorial/ornaments";
 import { useSession, useSessionHint } from "@/components/session";
+import { Restoring } from "@/components/session/gate";
 
 /**
  * The home page's opening block, in the one version of it that knows who is
@@ -20,7 +21,9 @@ import { useSession, useSessionHint } from "@/components/session";
  * every visitor, so the markup a stranger sees is built on the server, ships as
  * HTML, and costs this client bundle nothing but the reference to it. Only the
  * two states that cannot exist before the browser has spoken to the API — the
- * waiting and the greeting — are JavaScript.
+ * waiting and the greeting — are JavaScript. The wait itself belongs to
+ * components/session/gate.tsx, which shows the same rite at the door of
+ * `/studio` and `/admin`: it is one wait for one question, asked here and there.
  *
  * There are three renders here rather than two, and the third is the whole
  * reason this reads calmly. Nothing on this origin can know *who* is reading
@@ -69,60 +72,6 @@ export function Welcome({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The wait, dressed as a rite rather than a spinner: the seal turning once every
- * twelve seconds over a breathing pool of gold, and a line saying what is being
- * waited for.
- *
- * It reserves roughly the greeting's height so that arriving at the greeting is
- * a fade and not a jolt of everything below it. Exactly matching is not worth
- * chasing — a name is as tall as it is — and the page centres its column, so
- * what is left of the difference is shared between top and bottom.
- *
- * The display class comes from the caller and is deliberately absent here: this
- * is rendered `hidden` in the pre-paint pass and `flex` after it, and a base
- * `flex` would leave two rules of the same property to be settled by the order
- * Tailwind happened to emit them in.
- */
-function Restoring({ className }: { className?: string }) {
-  const t = useTranslations("home.welcome");
-
-  return (
-    <section
-      // The wait is announced, the greeting is not: a reader who cannot see the
-      // seal turning still learns that something is happening, and `polite`
-      // means it waits its turn rather than interrupting.
-      aria-live="polite"
-      aria-busy="true"
-      className={`compact:min-h-[20rem] min-h-[16rem] flex-col items-center justify-center gap-8 text-center ${className ?? ""}`}
-    >
-      <span className="text-primary/60 drop-shadow-glow compact:size-20 relative grid size-16 place-items-center">
-        <span
-          aria-hidden="true"
-          className="bg-primary/10 absolute inset-[-25%] rounded-full blur-2xl motion-safe:animate-pulse"
-        />
-        {/* Twelve seconds a turn. `animate-spin`'s own second would be a loading
-            spinner; at this speed a heraldic seal is barely moving, which is the
-            difference between waiting and being made to wait. */}
-        <Seal className="relative size-full [animation-duration:12s] motion-safe:animate-spin" />
-      </span>
-
-      <p className="font-caps text-primary/70 text-label tracking-eyebrow flex flex-col items-center gap-5 uppercase">
-        <span className="-mr-[0.4em]">{t("restoring")}</span>
-
-        {/* The ellipsis, in the site's own alphabet — three sparks lighting in
-            turn. `motion-safe:` covers the stagger too: without it they simply
-            sit there, lit, which is a full stop and not a broken animation. */}
-        <span aria-hidden="true" className="flex items-center gap-3">
-          <Spark className="motion-safe:animate-pulse" />
-          <Spark className="[animation-delay:400ms] motion-safe:animate-pulse" />
-          <Spark className="[animation-delay:800ms] motion-safe:animate-pulse" />
-        </span>
-      </p>
-    </section>
-  );
-}
-
-/**
  * Built from the prototype's hero (prototype/styles.css:354-414): the eyebrow
  * with its rotated sparks, the Cinzel title under a gold glow, the italic line
  * beneath. The seal is the auth card's, repeated on purpose — it is the glyph
@@ -134,6 +83,9 @@ function Restoring({ className }: { className?: string }) {
  */
 function Greeting({ user }: { user: User }) {
   const t = useTranslations("home.welcome");
+  // Its own namespace, because the rail and the user menu name the same four
+  // roles and none of them is the home page's greeting.
+  const role = useTranslations("roles");
 
   return (
     <section className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-4 flex flex-col items-center gap-6 text-center duration-1000">
@@ -183,7 +135,7 @@ function Greeting({ user }: { user: User }) {
 
       <div className="flex flex-col items-center gap-3">
         <span className="font-caps text-primary text-micro tracking-label border-primary/30 bg-primary/5 border px-4 py-2 uppercase">
-          {t(`roles.${user.role}`)}
+          {role(user.role)}
         </span>
 
         {/* The account's own date, formatted by the catalogue's ICU placeholder
@@ -194,15 +146,5 @@ function Greeting({ user }: { user: User }) {
         </span>
       </div>
     </section>
-  );
-}
-
-/** The prototype's `.hero-eyebrow .dot` (styles.css:375-381) — a lit square, turned. */
-function Spark({ className }: { className?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`bg-primary size-[4px] shrink-0 rotate-45 shadow-[0_0_8px_var(--accent-gold)] ${className ?? ""}`}
-    />
   );
 }

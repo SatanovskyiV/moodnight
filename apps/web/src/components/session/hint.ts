@@ -48,10 +48,14 @@ export type SessionHint = "present" | "absent" | "unknown";
  *
  * Both are private, because exporting them would imply the other half of the
  * contract can be built from them and it cannot: the matching side is a pair of
- * literal Tailwind variants in components/top-nav/auth-action.tsx, and Tailwind
- * finds classes by scanning source for whole strings — one assembled from these
- * names would compile to no CSS at all. Renaming either value is two edits, and
- * that file is the other one.
+ * literal Tailwind variants, and Tailwind finds classes by scanning source for
+ * whole strings — one assembled from these names would compile to no CSS at all.
+ * Renaming either value is therefore an edit here and one in each of the three
+ * files that spell the pair out:
+ *
+ * - components/top-nav/auth-action.tsx — sign in, or the reader's own menu
+ * - components/session/gate.tsx — the shut door, or the wait
+ * - app/[locale]/welcome.tsx — the home page's anonymous block, or the wait
  */
 const SESSION_HINT_ATTRIBUTE = "data-session";
 

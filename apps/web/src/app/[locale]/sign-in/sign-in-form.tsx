@@ -71,7 +71,7 @@ export function SignInForm() {
         // deliberately no `router.refresh()` alongside it — every page here is
         // static and no Server Component can see the session anyway, so
         // re-fetching the tree would cost a request and change nothing on screen.
-        router.replace("/");
+        router.replace(returnPath());
       },
     },
   });
@@ -170,6 +170,36 @@ export function SignInForm() {
       </Button>
     </form>
   );
+}
+
+/**
+ * Where to go once the candles have recognised somebody — the page they were
+ * turned away from, or the home page if they simply came here to sign in.
+ *
+ * A gated page does not redirect a stranger to this form; it shows them a door
+ * and puts the address they wanted in `?next=` (see components/session/gate.tsx).
+ * This is the other end of that.
+ *
+ * Read from `window.location` and not from `useSearchParams`, which would pull
+ * this whole screen out of the static build unless it were wrapped in a Suspense
+ * boundary — a lot of machinery for a value nothing renders. It is needed once,
+ * in a handler that only ever runs in a browser.
+ *
+ * **Only an in-app path is accepted**, because anything can be typed into a
+ * query string and a form that follows it blindly is an open redirect: send a
+ * member a link to `/sign-in?next=https://…` and they sign in on the real site
+ * and land on somebody else's. `//host` and `/\host` are the same attack in the
+ * shapes that still start with a slash. What survives is a path this app's own
+ * router resolves, which next-intl then prefixes with the active locale.
+ */
+function returnPath(): string {
+  const next = new URLSearchParams(window.location.search).get("next");
+
+  if (next?.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\")) {
+    return next;
+  }
+
+  return "/";
 }
 
 /**

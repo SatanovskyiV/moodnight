@@ -1,6 +1,6 @@
 # MoodNight — from prototype to product
 
-> **Status:** Phase 1 done, Phase 2 under way, Phase 3's API half landed · **Last updated:** 2026-08-04
+> **Status:** Phase 1 done, Phase 2 under way, Phase 3's API half landed, the three area shells framed out · **Last updated:** 2026-08-09
 > Links to `../prototype/*` refer to the original prototype files, which Phase 1 replaces.
 
 ## Context
@@ -116,6 +116,26 @@ Two things worth naming carefully: `role` is the permission (`ROOT|ADMIN|EDITOR|
 
 `ROOT` is the site owner and a singleton — the database allows one such row and no more. Phase 3's guard is what decides who may *assign* it; the index only guarantees that no two accounts ever hold it at once.
 
+## The three areas
+
+The site has three surfaces, and they were framed out ahead of their contents so that where a thing lives could be settled before anything had to be built inside it. Each is a shell with real navigation and real access control and placeholder pages.
+
+| Area | Route | Sections so far | Floor |
+|---|---|---|---|
+| Public | everything else | — | — |
+| Studio | `/studio` | `/studio/poems` | `AUTHOR`, i.e. anybody signed in |
+| Administration | `/admin` | `/admin/users` | `ADMIN`, until the queue lands |
+
+Each area carries one section for now, and its own address redirects to it — there is no overview page while there is nothing to overview. An area's floor is the gentlest floor any of its sections keeps, computed from the table rather than declared beside it, so the administration reopens to `EDITOR` the moment `/admin/queue` is back in Phase 4 without a second place to remember. The rest of the sections listed in the phases below (the queue, responses, echoes, published poems, the hearth) arrive with the work that fills them.
+
+**The studio is not the `EDITOR` role.** Everyone who can post is an `AUTHOR` — the column's default — and that is who the studio is for; `EDITOR` is the queue moderator, an *admin*-area role. The word "editor" is therefore never used for the studio, and `/me/poems` in Phase 4 below is `/studio/poems`.
+
+Sections and their floors are declared once, in `apps/web/src/components/area/links.ts`. The shell reads a page's floor out of that table and the rail filters its own rows against it, so a section cannot be hidden from the navigation and still open to anybody who types the address.
+
+**Gating in the browser is chrome, not security.** The refresh cookie is pathed `/api/auth`, so a request for `/uk/studio` does not carry it — neither the Next.js proxy nor a Server Component can tell who is asking, and buying that knowledge would mean an API call per page view against a cost model built on static delivery. So the pages stay prerendered, `RequireRole` decides what to *show*, and `RolesGuard` on the API decides what to *allow*. A gated page is built at deploy time for everybody and its payload is fetchable by anybody, so data must always arrive over an authenticated call and never be baked into a page.
+
+*shadcn: `dropdown-menu` (the user menu in the top bar).*
+
 ## Phase 1 — Skeleton (no DB)
 
 Pure plumbing. Nothing here talks to a database; the point is a green pipeline from local dev to two live URLs.
@@ -150,7 +170,7 @@ Each phase ships and deploys on its own. The shadcn line is everything that phas
   *shadcn: `badge` (tags), `avatar` (author), `skeleton` (loading).*
 - **Phase 3 — Auth.** ~~Register / login / refresh / logout / me. Argon2 hashing, short-lived JWT + httpOnly refresh cookie, roles guard.~~ **The API half is done** — see the Authentication section of [README.md](../README.md). Still to do: wire up the Phase 1 form with `react-hook-form` + `@hookform/resolvers/zod`, resolving against **the same zod schema `packages/shared` gives NestJS's validation pipe** — one schema, validated on both sides. Email verification via Resend. Google OAuth as a later Passport strategy. A password-reset flow, which is also what `PATCH /users/:id` deliberately does *not* provide.
   *shadcn: `form`, `sonner` (toasts), `dropdown-menu` (user menu).*
-- **Phase 4 — Writing + moderation.** Poem editor, `/me/poems` dashboard, `DRAFT → PENDING_REVIEW → PUBLISHED|REJECTED` transitions, `/admin/queue` for editors, `Review` audit trail, notification emails. This is where shadcn earns its place — the queue is a real data table and none of it gets hand-built.
+- **Phase 4 — Writing + moderation.** Poem editor, the `/studio/poems` dashboard, `DRAFT → PENDING_REVIEW → PUBLISHED|REJECTED` transitions, `/admin/queue` for editors, `Review` audit trail, notification emails. The shells are already in place (see "The three areas" above); this phase fills `/studio/poems` and adds the queue as a second row in `links.ts`. It is also where shadcn earns its place — the queue is a real data table and none of it gets hand-built.
   *shadcn: `table` (+ TanStack Table), `dialog`, `alert-dialog`, `textarea`, `select`, `tabs`.*
 - **Phase 5 — Engagement.** Persist Kindle/Lament (one per user per kind, replacing the local `useState` at [app.jsx:177](../prototype/app.jsx#L177)), read counting, collections, author profiles, search.
   *shadcn: `tooltip`, `popover`, `command` (search).*

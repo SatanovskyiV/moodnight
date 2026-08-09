@@ -131,3 +131,21 @@ export function FlourishRight({ width = 80, height = 14, className }: FlourishPr
     </svg>
   );
 }
+
+/**
+ * A lit square, turned — the prototype's `.hero-eyebrow .dot`
+ * (prototype/styles.css:375-381).
+ *
+ * The one member of this set that is not an SVG glyph, because at four pixels a
+ * rotated box *is* the drawing and a `<svg>` around it would only be a wrapper.
+ * It lives here anyway: three screens now punctuate a line of small caps with
+ * it, and a shape repeated across screens is an ornament wherever it is drawn.
+ */
+export function Spark({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`bg-primary size-[4px] shrink-0 rotate-45 shadow-[0_0_8px_var(--accent-gold)] ${className ?? ""}`}
+    />
+  );
+}

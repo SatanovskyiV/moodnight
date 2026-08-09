@@ -6,9 +6,12 @@ import { useSession, useSessionHint } from "@/components/session";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 
+import { UserMenu, UserMenuStandIn } from "./user-menu";
+
 /**
  * The one control in the bar that depends on who is reading: a link to
- * `/sign-in` for a stranger, a button that ends the session for a member.
+ * `/sign-in` for a stranger, and for a member their own menu — name, standing,
+ * the way into their areas, and the way out.
  *
  * A client component because that is the only place the answer exists — see the
  * note on `SessionProvider`. It is also why this is split out of `TopNav` rather
@@ -39,6 +42,11 @@ import { Link } from "@/i18n/navigation";
  * `data-session` variants below are spelled out in full for a duller reason —
  * Tailwind finds classes by scanning for whole strings, so they cannot be built
  * from the names in session/hint.ts, which is why that file points back here.
+ *
+ * `restoring` gets a branch of its own now that the member's control carries
+ * their name, which is the one thing a restoring session does not yet have. It
+ * is the same shape and the same square, holding the place — see
+ * `UserMenuStandIn`.
  */
 export function AuthAction() {
   const hint = useSessionHint();
@@ -48,7 +56,7 @@ export function AuthAction() {
     return (
       <>
         <SignInLink className="[[data-session=restoring]_&]:hidden" />
-        <SignOutButton className="hidden [[data-session=restoring]_&]:inline-flex" />
+        <UserMenuStandIn className="hidden [[data-session=restoring]_&]:flex" />
       </>
     );
   }
@@ -57,7 +65,11 @@ export function AuthAction() {
     return <SignInLink />;
   }
 
-  return <SignOutButton onSignOut={signOut} isSigningOut={isSigningOut} />;
+  if (state.status === "restoring") {
+    return <UserMenuStandIn className="flex" />;
+  }
+
+  return <UserMenu user={state.session.user} onSignOut={signOut} isSigningOut={isSigningOut} />;
 }
 
 function SignInLink({ className }: { className?: string }) {
@@ -66,39 +78,6 @@ function SignInLink({ className }: { className?: string }) {
   return (
     <Button asChild variant="ghost" size="sm" className={className}>
       <Link href="/sign-in">{t("signIn")}</Link>
-    </Button>
-  );
-}
-
-/**
- * Rendered without a handler in the `unknown` state, where there is nothing to
- * call yet: the session it would end has not been established, and the bundle
- * that would attach the listener is the same one whose absence put the bar here.
- * It is left enabled rather than disabled because it is about to become the real
- * control — a moment of dimmed, un-clickable button would advertise a gap the
- * reader is otherwise never shown.
- */
-function SignOutButton({
-  className,
-  onSignOut,
-  isSigningOut = false,
-}: {
-  className?: string;
-  onSignOut?: () => void;
-  isSigningOut?: boolean;
-}) {
-  const t = useTranslations("nav");
-
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={className}
-      onClick={onSignOut}
-      disabled={isSigningOut}
-      aria-busy={isSigningOut}
-    >
-      {isSigningOut ? t("signingOut") : t("signOut")}
     </Button>
   );
 }

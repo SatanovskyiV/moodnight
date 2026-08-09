@@ -12,10 +12,32 @@
     "about": "About",
     "signIn": "Sign in",
     "signOut": "Sign out",
-    "signingOut": "Signing out…"
+    "signingOut": "Signing out…",
+    "account": "Your candle",
+    "myWriting": "My writing",
+    "administration": "Administration"
   },
   "localeSwitcher": {
     "label": "Language"
+  },
+  "roles": {
+    "ROOT": "Keeper of the hearth",
+    "ADMIN": "Warden of names",
+    "EDITOR": "Reader of the queue",
+    "AUTHOR": "Singer"
+  },
+  "access": {
+    "restoring": "The candles are remembering you",
+    "door": {
+      "title": "The door is shut",
+      "line": "Past this threshold go only those the candles already know.",
+      "action": "Sign in"
+    },
+    "forbidden": {
+      "title": "Not your threshold",
+      "line": "Your candle burns, but another key keeps this gate.",
+      "action": "Back to the hearth"
+    }
   },
   "signIn": {
     "metaTitle": "Sign in",
@@ -67,15 +89,26 @@
     "title": "MoodNight",
     "tagline": "The frame is up. Theme, type and tokens are in place — the poetry follows.",
     "welcome": {
-      "restoring": "The candles are remembering you",
       "eyebrow": "The candles know you",
       "line": "Your candle burns again. The night is listening.",
-      "since": "In the book of shadows since {date, date, long}",
-      "roles": {
-        "ROOT": "Keeper of the hearth",
-        "ADMIN": "Warden of names",
-        "EDITOR": "Reader of the queue",
-        "AUTHOR": "Singer"
+      "since": "In the book of shadows since {date, date, long}"
+    }
+  },
+  "studio": {
+    "title": "My writing",
+    "sections": {
+      "poems": {
+        "title": "Poems",
+        "line": "This is where you will write new work and keep the written in order — drafts, poems sent to the queue, poems published."
+      }
+    }
+  },
+  "admin": {
+    "title": "Administration",
+    "sections": {
+      "users": {
+        "title": "Names",
+        "line": "This is everyone whose candle burns: who is given a key, and whose candle is dimmed."
       }
     }
   }
