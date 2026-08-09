@@ -1,3 +1,4 @@
+import { DEFAULT_PER_PAGE, listUsersQuerySchema } from "@moodnight/shared";
 import { Test } from "@nestjs/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -58,24 +59,86 @@ describe("UsersService", () => {
     service = moduleRef.get(UsersService);
   });
 
-  describe("findAll", () => {
-    it("selects only the public columns, newest first, breaking ties by id", async () => {
-      prisma.user.findMany.mockResolvedValue([]);
+  describe("list", () => {
+    /** The query as the schema hands it over when a client sends nothing. */
+    const defaults = listUsersQuerySchema.parse({});
 
-      await service.findAll();
+    beforeEach(() => {
+      prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
+    });
+
+    it("selects only the public columns, newest first, breaking ties by id", async () => {
+      await service.list(defaults);
 
       expect(prisma.user.findMany).toHaveBeenCalledWith({
-        select: PUBLIC_FIELDS,
+        where: {},
         // Both keys matter: `createdAt` alone leaves rows written in the same
-        // millisecond in an order Postgres is free to change between requests.
+        // millisecond in an order Postgres is free to change between requests,
+        // which is how a paged list starts repeating and skipping rows.
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: 0,
+        take: DEFAULT_PER_PAGE,
+        select: PUBLIC_FIELDS,
       });
     });
 
     it("maps Prisma's Dates to ISO strings", async () => {
       prisma.user.findMany.mockResolvedValue([userRow()]);
+      prisma.user.count.mockResolvedValue(1);
 
-      await expect(service.findAll()).resolves.toEqual([userJson()]);
+      await expect(service.list(defaults)).resolves.toEqual({
+        items: [userJson()],
+        total: 1,
+        page: 1,
+        perPage: DEFAULT_PER_PAGE,
+        pageCount: 1,
+      });
+    });
+
+    /**
+     * The two queries have to describe the same set of rows, or the count is
+     * the total for a different search than the one that produced the page.
+     * Asserting they were handed the identical object is what pins that down;
+     * building the `where` twice is exactly the bug it would not catch.
+     */
+    it("counts with the same where clause as the page it accompanies", async () => {
+      await service.list(listUsersQuerySchema.parse({ search: "леся", role: "ADMIN" }));
+
+      const [findMany] = prisma.user.findMany.mock.calls[0] as [{ where: unknown }];
+      const [count] = prisma.user.count.mock.calls[0] as [{ where: unknown }];
+
+      expect(count.where).toEqual(findMany.where);
+      expect(count).toEqual({ where: findMany.where });
+    });
+
+    it("reports how many pages the total divides into", async () => {
+      prisma.user.count.mockResolvedValue(41);
+
+      await expect(
+        service.list(listUsersQuerySchema.parse({ perPage: "20" })),
+      ).resolves.toMatchObject({ total: 41, pageCount: 3 });
+    });
+
+    // Not 1. A pager that says "page 1 of 1" over an empty table is claiming
+    // there is something to look at.
+    it("reports no pages at all when nothing matches", async () => {
+      await expect(service.list(defaults)).resolves.toMatchObject({ total: 0, pageCount: 0 });
+    });
+
+    // Deleting the last row of the last page leaves a client asking for a page
+    // that no longer exists; the honest answer is an empty one with the true
+    // total, which is what lets it step back rather than handle a 404.
+    it("answers an empty page past the end rather than refusing", async () => {
+      prisma.user.count.mockResolvedValue(3);
+
+      await expect(service.list(listUsersQuerySchema.parse({ page: "9" }))).resolves.toEqual({
+        items: [],
+        total: 3,
+        page: 9,
+        perPage: DEFAULT_PER_PAGE,
+        pageCount: 1,
+      });
     });
   });
 

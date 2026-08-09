@@ -21,7 +21,7 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { CreateUser, UpdateUser, User } from "./model";
+import type { CreateUser, ListUsersParams, UpdateUser, User, UserPage } from "./model";
 
 import { request } from "../request";
 
@@ -43,8 +43,13 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 export type listUsersResponse200 = {
-  data: User[];
+  data: UserPage;
   status: 200;
+};
+
+export type listUsersResponse400 = {
+  data: void;
+  status: 400;
 };
 
 export type listUsersResponse401 = {
@@ -60,46 +65,75 @@ export type listUsersResponse403 = {
 export type listUsersResponseSuccess = listUsersResponse200 & {
   headers: Headers;
 };
-export type listUsersResponseError = (listUsersResponse401 | listUsersResponse403) & {
+export type listUsersResponseError = (
+  listUsersResponse400 | listUsersResponse401 | listUsersResponse403
+) & {
   headers: Headers;
 };
 
 export type listUsersResponse = listUsersResponseSuccess | listUsersResponseError;
 
-export const getListUsersUrl = () => {
-  return `/users`;
+export const getListUsersUrl = (params?: ListUsersParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["role"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : String(v));
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/users?${stringifiedParams}` : `/users`;
 };
 
 /**
- * Every user, newest first. Unpaginated. For editors and above.
- * @summary List all users
+ * One page of users, newest first unless asked otherwise. For editors and above.
+ *
+ * `search` matches name, surname and email, case-insensitively, and every whitespace-separated term has to match one of them — so `леся укра` finds a Леся Українка. `role` may be repeated to accept several (`?role=ADMIN&role=EDITOR`). `sort` accepts only the properties listed on it, and `?sort=role` orders by the privilege ladder rather than alphabetically, because that is the order the Postgres enum declares.
+ *
+ * Every parameter is optional and an empty one is read as absent, so a table can keep its controls in the URL and clear them without pruning the query string. An unrecognised parameter is a 400 rather than something ignored.
+ * @summary List users
  */
 export const listUsers = async (
+  params?: ListUsersParams,
   options?: Parameters<typeof request>[1],
 ): Promise<listUsersResponse> => {
-  return request<listUsersResponse>(getListUsersUrl(), {
+  return request<listUsersResponse>(getListUsersUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListUsersQueryKey = () => {
-  return [`/users`] as const;
+export const getListUsersQueryKey = (params?: ListUsersParams) => {
+  return [`/users`, ...(params ? [params] : [])] as const;
 };
 
 export const getListUsersQueryOptions = <
   TData = Awaited<ReturnType<typeof listUsers>>,
   TError = void,
->(options?: {
-  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>;
-  request?: SecondParameter<typeof request>;
-}) => {
+>(
+  params?: ListUsersParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListUsersQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListUsersQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listUsers>>> = ({ signal }) =>
-    listUsers({ signal, ...requestOptions });
+    listUsers(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listUsers>>,
@@ -112,6 +146,7 @@ export type ListUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listUse
 export type ListUsersQueryError = void;
 
 export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = void>(
+  params: undefined | ListUsersParams,
   options: {
     query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> &
       Pick<
@@ -127,6 +162,7 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = void>(
+  params?: ListUsersParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> &
       Pick<
@@ -142,6 +178,7 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = void>(
+  params?: ListUsersParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>;
     request?: SecondParameter<typeof request>;
@@ -149,17 +186,18 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * @summary List all users
+ * @summary List users
  */
 
 export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = void>(
+  params?: ListUsersParams,
   options?: {
     query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>;
     request?: SecondParameter<typeof request>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getListUsersQueryOptions(options);
+  const queryOptions = getListUsersQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

@@ -1,12 +1,16 @@
+import { applyDecorators } from "@nestjs/common";
 import {
   createUserSchema,
   healthSchema,
+  type ListDefinition,
   loginSchema,
   registerSchema,
   sessionSchema,
   updateUserSchema,
+  userPageSchema,
   userSchema,
 } from "@moodnight/shared";
+import { ApiQuery } from "@nestjs/swagger";
 import type {
   ReferenceObject,
   SchemaObject,
@@ -35,6 +39,9 @@ const openApiSchemas = {
   // it comes out as a `$ref` to the sibling component rather than a second
   // inlined copy of the user shape.
   Session: sessionSchema,
+  // The same, for the paged envelope every list endpoint answers with. Only the
+  // envelope is named per resource; what a page *of* looks like is `User`.
+  UserPage: userPageSchema,
 } satisfies Record<string, z.ZodType>;
 
 export type OpenApiSchemaName = keyof typeof openApiSchemas;
@@ -44,9 +51,33 @@ export function zodRef(name: OpenApiSchemaName): ReferenceObject {
   return { $ref: `#/components/schemas/${name}` };
 }
 
-/** The same, for the list endpoints: `@ApiOkResponse({ schema: zodArrayRef("User") })`. */
-export function zodArrayRef(name: OpenApiSchemaName): SchemaObject {
-  return { type: "array", items: zodRef(name) };
+/**
+ * Documents a list endpoint's query parameters from the same zod schema its
+ * `@Query()` is validated against: `@ApiListQuery(userList)`.
+ *
+ * OpenAPI has no way to point a whole set of query parameters at one component,
+ * so they have to be spelled out one by one — and spelling them out by hand
+ * beside a schema that already describes them is exactly the duplication the
+ * rest of this file exists to avoid. This walks the schema instead, so
+ * `defineList` remains the only place a list's parameters are written down and
+ * a new filter is documented by being declared.
+ *
+ * Read in the **input** direction, which is the difference between a truthful
+ * document and a misleading one: `page` and `sort` carry defaults, so their
+ * output is always present while their input is optional, and reading the
+ * output side would document every parameter as required.
+ */
+export function ApiListQuery(definition: ListDefinition) {
+  const { properties = {}, required = [] } = z.toJSONSchema(definition.query, {
+    target: "openapi-3.0",
+    io: "input",
+  }) as { properties?: Record<string, SchemaObject>; required?: string[] };
+
+  return applyDecorators(
+    ...Object.entries(properties).map(([name, { description, ...schema }]) =>
+      ApiQuery({ name, description, required: required.includes(name), schema }),
+    ),
+  );
 }
 
 /**

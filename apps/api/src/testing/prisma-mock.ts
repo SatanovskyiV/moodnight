@@ -121,6 +121,10 @@ export function createPrismaMock() {
   return {
     user: {
       findMany: vi.fn(),
+      // Paired with `findMany` by every list endpoint: the page and the total
+      // are two queries against one `where`, so a spec that stubs one and not
+      // the other gets an undefined total rather than a passing test.
+      count: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),

@@ -5,9 +5,18 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "@moodnight/db";
-import type { CreateUserInput, UpdateUserInput, User, UserRole } from "@moodnight/shared";
+import {
+  type CreateUserInput,
+  type ListUsersQuery,
+  type UpdateUserInput,
+  type User,
+  userList,
+  type UserPage,
+  type UserRole,
+} from "@moodnight/shared";
 
 import { hashPassword } from "../auth/password";
+import { listArgs, toPage } from "../common/list-query";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -177,22 +186,34 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Every user, newest first.
+   * One page of users, searched, filtered and ordered as the query asks.
    *
-   * Unpaginated on purpose — it matches the endpoint as asked for, and the
-   * table is small. It is also the thing to revisit first when it stops being
-   * small; the roadmap's Phase 2 pagination applies here as much as to poems.
+   * Nothing about *which* properties may be searched, filtered or sorted is
+   * decided here — `userList` in @moodnight/shared declares that, its schema
+   * has already refused anything else with a 400, and `listArgs` turns what
+   * survived into a `where` and an `orderBy`. This method is the two queries
+   * and the envelope.
+   *
+   * Those two queries run together rather than in a transaction. A row written
+   * between them could make `total` disagree with `items` by one, which costs a
+   * pager a briefly wrong count and costs a serialised pair of round trips to
+   * prevent — the wrong trade for an administration table, and a real one on a
+   * database that scales to zero.
    */
-  async findAll(): Promise<User[]> {
-    const users = await this.prisma.user.findMany({
-      select: PUBLIC_FIELDS,
-      // `id` is a UUIDv7, so it breaks `createdAt` ties in creation order
-      // rather than arbitrarily — two rows written in the same millisecond
-      // still come back in a stable sequence across requests.
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    });
+  async list(query: ListUsersQuery): Promise<UserPage> {
+    const { where, orderBy, skip, take } = listArgs<
+      Prisma.UserWhereInput,
+      Prisma.UserOrderByWithRelationInput
+    >(userList, query);
 
-    return users.map(toUser);
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({ where, orderBy, skip, take, select: PUBLIC_FIELDS }),
+      // The same `where` object, so the count can never describe a different
+      // set of rows than the page it is the total for.
+      this.prisma.user.count({ where }),
+    ]);
+
+    return toPage(users.map(toUser), total, query);
   }
 
   /**

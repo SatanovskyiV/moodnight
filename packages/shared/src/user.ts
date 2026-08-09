@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { defineList } from "./list";
+
 /**
  * The permission ladder, in descending order of privilege. Kept in step with
  * the `UserRole` enum in packages/db by the mapper in the API's users service,
@@ -134,3 +136,59 @@ export const updateUserSchema = writableUserFields
   .meta({ description: "The fields to change on a user. At least one is required." });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+/**
+ * What `GET /users` accepts and answers with — the administration table's list,
+ * and the first use of the list framework in ./list.
+ *
+ * Each of the three lists is a deliberate choice, not the set of columns that
+ * happened to exist:
+ *
+ * - **searchable** — the three fields an administrator would type into a search
+ *   box looking for a person. `role` is not among them: it is a closed set, so
+ *   it belongs in a filter where the options can be shown, not in a text match
+ *   where "ad" would quietly select every admin.
+ * - **sortable** — the columns a users table has headers for. `updatedAt` is
+ *   absent because nothing displays it; it costs one word to add when something
+ *   does.
+ * - **filterable** — `role`, and its accepted values come from
+ *   {@link userRoleSchema} itself, so the filter cannot drift from the enum.
+ *
+ * Sorting by `role` orders by the Postgres enum's own declaration order, which
+ * the 20260804120000_add_root_role migration deliberately made the privilege
+ * ladder — so `?sort=role` reads ROOT, ADMIN, EDITOR, AUTHOR rather than
+ * alphabetically, and agrees with `ROLE_RANK` in ./auth.
+ *
+ * The default is the order the endpoint has always answered in: newest first.
+ * That keeps a client that sends no parameters at all seeing what it saw
+ * before, and it is the right first page for a table of accounts.
+ *
+ * One caveat worth knowing before trusting `?sort=name`: alphabetical is
+ * whatever the database's collation says it is, and a Postgres initialised
+ * under the `C` locale sorts Cyrillic by code point — which puts і, ї, є and ґ
+ * after я, and every capital before every lowercase. If the local container or
+ * Neon turns out to be `C`, the fix is a migration giving these two columns an
+ * ICU collation (`ALTER TABLE "users" ALTER COLUMN "name" TYPE VARCHAR(100)
+ * COLLATE "uk-UA-x-icu"`), not a change here — Prisma has no way to express a
+ * collation, so this is the same kind of hand-written SQL as `users_one_root`.
+ */
+export const userList = defineList({
+  item: userSchema,
+  searchable: ["name", "surname", "email"],
+  sortable: ["name", "surname", "email", "role", "createdAt"],
+  filterable: ["role"],
+  defaultSort: "createdAt",
+  defaultOrder: "desc",
+});
+
+/** The query parameters `GET /users` accepts, parsed. */
+export const listUsersQuerySchema = userList.query;
+
+export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
+
+/** One page of users, as `GET /users` answers. */
+export const userPageSchema = userList.page.meta({
+  description: "A page of users, and how many match in total.",
+});
+
+export type UserPage = z.infer<typeof userPageSchema>;

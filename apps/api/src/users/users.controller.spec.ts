@@ -89,26 +89,142 @@ describe("Users endpoints", () => {
   const auth = (token: string): [string, string] => ["authorization", `Bearer ${token}`];
 
   describe("GET /users", () => {
-    it("returns every user with the timestamps serialised as ISO strings", async () => {
-      prisma.user.findMany.mockResolvedValue([userRow(), userRow({ id: OTHER_USER_ID })]);
-
-      const response = await http()
-        .get("/users")
-        .set(...auth(asEditor))
-        .expect(200);
-
-      expect(response.body).toEqual([userJson(), userJson({ id: OTHER_USER_ID })]);
+    beforeEach(() => {
+      prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
     });
 
-    it("returns an empty array rather than a 404 when there are no users", async () => {
-      prisma.user.findMany.mockResolvedValue([]);
+    it("returns a page of users with the timestamps serialised as ISO strings", async () => {
+      prisma.user.findMany.mockResolvedValue([userRow(), userRow({ id: OTHER_USER_ID })]);
+      prisma.user.count.mockResolvedValue(2);
 
       const response = await http()
         .get("/users")
         .set(...auth(asEditor))
         .expect(200);
 
-      expect(response.body).toEqual([]);
+      expect(response.body).toEqual({
+        items: [userJson(), userJson({ id: OTHER_USER_ID })],
+        total: 2,
+        page: 1,
+        perPage: 20,
+        pageCount: 1,
+      });
+    });
+
+    it("returns an empty page rather than a 404 when there are no users", async () => {
+      const response = await http()
+        .get("/users")
+        .set(...auth(asEditor))
+        .expect(200);
+
+      expect(response.body).toEqual({ items: [], total: 0, page: 1, perPage: 20, pageCount: 0 });
+    });
+
+    /**
+     * The whole point of going over HTTP for these: a query string is strings
+     * and arrays of strings, and everything the service relies on — a numeric
+     * `page`, a `role` that is a list whether one was sent or three — happens
+     * in the pipe between the two. Calling the service directly would skip it.
+     */
+    it("turns the query string into the query the database is asked", async () => {
+      await http()
+        .get(
+          "/users?page=2&perPage=5&search=%20леся%20укра%20&sort=surname&order=asc&role=ADMIN&role=EDITOR",
+        )
+        .set(...auth(asEditor))
+        .expect(200);
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            AND: [
+              {
+                OR: [
+                  { name: { contains: "леся", mode: "insensitive" } },
+                  { surname: { contains: "леся", mode: "insensitive" } },
+                  { email: { contains: "леся", mode: "insensitive" } },
+                ],
+              },
+              {
+                OR: [
+                  { name: { contains: "укра", mode: "insensitive" } },
+                  { surname: { contains: "укра", mode: "insensitive" } },
+                  { email: { contains: "укра", mode: "insensitive" } },
+                ],
+              },
+            ],
+            role: { in: ["ADMIN", "EDITOR"] },
+          },
+          orderBy: [{ surname: "asc" }, { id: "asc" }],
+          skip: 5,
+          take: 5,
+        }),
+      );
+    });
+
+    it("answers the unfiltered first page when no parameters are sent", async () => {
+      await http()
+        .get("/users")
+        .set(...auth(asEditor))
+        .expect(200);
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {},
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip: 0,
+          take: 20,
+        }),
+      );
+    });
+
+    // A table that keeps its controls in the URL writes these the moment they
+    // are cleared, and a 400 for a cleared search box is not a usable API.
+    it("reads emptied parameters as absent ones", async () => {
+      await http()
+        .get("/users?search=&role=&sort=&order=&page=")
+        .set(...auth(asEditor))
+        .expect(200);
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {}, skip: 0, take: 20 }),
+      );
+    });
+
+    // Each of these is a column the endpoint deliberately does not expose to
+    // ordering, filtering or paging — and every one of them has to be refused
+    // before a query is built, not after.
+    it("400s on a query it does not accept, without asking the database", async () => {
+      for (const query of [
+        "sort=passwordHash",
+        "sort=tokenVersion",
+        "order=sideways",
+        "role=SUPERUSER",
+        "perPage=1000",
+        "page=0",
+        "email=poet@moodnight.dev",
+        "nmae=Леся",
+      ]) {
+        await http()
+          .get(`/users?${query}`)
+          .set(...auth(asEditor))
+          .expect(400);
+      }
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(prisma.user.count).not.toHaveBeenCalled();
+    });
+
+    it("names the offending parameter in the 400", async () => {
+      const response = await http()
+        .get("/users?sort=passwordHash")
+        .set(...auth(asEditor))
+        .expect(400);
+
+      expect(response.body.message).toEqual(
+        expect.arrayContaining([expect.stringContaining("sort")]),
+      );
     });
   });
 
@@ -508,6 +624,7 @@ describe("Users endpoints", () => {
 
     it("403s an editor trying to write, while letting the same editor read", async () => {
       prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
 
       await http()
         .get("/users")
@@ -533,6 +650,7 @@ describe("Users endpoints", () => {
     // passes without being listed.
     it("lets a role above the requirement through", async () => {
       prisma.user.findMany.mockResolvedValue([]);
+      prisma.user.count.mockResolvedValue(0);
 
       await http()
         .get("/users")

@@ -89,6 +89,42 @@ Two things worth knowing before changing any of it:
 
 **Who may do what.** `/users` is the administrative surface, not the way anyone signs up, and every route on it now requires a token and a minimum role — reads for `EDITOR` and above, writes for `ADMIN` and above. Two rules about `ROOT` sit under those, in the service: only a root may appoint a root, and only a root may edit or delete the account that is one. The single-root index enforces *how many* root accounts exist; those two enforce who may become one.
 
+### Lists
+
+Every list endpoint on this API pages, searches, filters and sorts the same way, and none of it is written per endpoint. A resource declares which of *its own properties* take part, and the query parameters, the OpenAPI document, the generated client and the Prisma `where` all follow from that one declaration:
+
+```ts
+// packages/shared/src/user.ts
+export const userList = defineList({
+  item: userSchema,
+  searchable: ["name", "surname", "email"],
+  sortable: ["name", "surname", "email", "role", "createdAt"],
+  filterable: ["role"],
+  defaultSort: "createdAt",
+  defaultOrder: "desc",
+});
+```
+
+```bash
+curl -s "$API/users?search=леся&role=ADMIN&role=EDITOR&sort=surname&order=asc&page=2&perPage=10" \
+  -H "authorization: Bearer $(cat tok)"
+# { "items": [...], "total": 137, "page": 2, "perPage": 10, "pageCount": 14 }
+```
+
+The field names are checked against `userSchema`, so a renamed column is a failed build rather than a parameter that silently matches nothing, and a property nobody listed is not sortable, not filterable and not searched. **The omission is the boundary** — `?sort=passwordHash` is a 400 for a parameter that was never offered, not a query that happens to find nothing.
+
+What the three lists mean, and the parts worth knowing before adding the next one ([packages/shared/src/list.ts](packages/shared/src/list.ts) and [apps/api/src/common/list-query.ts](apps/api/src/common/list-query.ts)):
+
+- **`search`** is one parameter matched against every searchable property, case-insensitively. It splits on whitespace and every term has to match *something* — so `?search=леся укра` finds Леся Українка across two columns, which a single `contains` over the whole phrase never would. It compiles to a leading-wildcard `ILIKE`, which no B-tree index can serve; `pg_trgm` is the answer when one of these tables stops being small.
+- **A filter is a parameter of the property's own name**, taking the property's own values — `?role=ADMIN`, repeated for several. Because the accepted values come from `userRoleSchema` itself, a new role becomes filterable the day it is added to the enum. The cost of the flat naming is one shared namespace, so `defineList` refuses at import time to build a filter called `page`, `perPage`, `search`, `sort` or `order`.
+- **`sort` is always made total** by appending the primary key in the same direction. A sort that is not total is a paging bug rather than an aesthetic one: rows that tie have no order between them, so Postgres may put the same row on page 1 and page 2 and skip another entirely. `?sort=role` orders by the Postgres enum's declaration order, which is the privilege ladder rather than the alphabet.
+- **`perPage` is capped**, and asking for more is a 400 rather than something quietly clamped — a client told it received 1000 rows when it received 100 will page straight past the rest.
+- **Every parameter is optional and an empty one reads as absent**, so a table can keep its controls in the URL and clear them without pruning the query string. An *unrecognised* parameter is still a 400 naming the key, for the same reason the write schemas are strict: `?nmae=Леся` would otherwise come back looking like a successful search over every row.
+
+Two things a list does not do. It is not a query language — no `?filter[name][gte]`, no boolean expressions, no client-chosen `select`; each of those is a way to write SQL through a URL, and the cost lands on whoever has to make it safe and indexable later. And the page and its `total` are two queries running together rather than one transaction, so a row written between them can make the count differ by one — the right trade for an administration table on a database that scales to zero.
+
+One caveat about alphabetical sorting: it is whatever the database's collation says it is, and a Postgres initialised under the `C` locale sorts Cyrillic by code point — і, ї, є and ґ land after я, and every capital before every lowercase. If that turns out to be true of the local container or of Neon, the fix is a migration giving `name` and `surname` an ICU collation (`ALTER TABLE "users" ALTER COLUMN "name" TYPE VARCHAR(100) COLLATE "uk-UA-x-icu"`), not a change in the list definition — Prisma cannot express a collation, so it is hand-written SQL of the same kind as `users_one_root`.
+
 ### The database
 
 Postgres via Prisma 7, all of it in `packages/db`. Nothing else in the repo talks to the database directly: `apps/api` injects `PrismaService`, and `apps/web` never connects at all — its read path is ISR-cached and goes over HTTP.

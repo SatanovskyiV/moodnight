@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -30,16 +31,20 @@ import {
   type Actor,
   type CreateUserInput,
   createUserSchema,
+  type ListUsersQuery,
+  listUsersQuerySchema,
   type UpdateUserInput,
   type User,
   updateUserSchema,
+  userList,
+  type UserPage,
 } from "@moodnight/shared";
 
 import { CurrentUser, Roles } from "../auth/decorators";
 import { JwtAuthGuard } from "../auth/guards";
 import { RolesGuard } from "../auth/roles.guard";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
-import { zodArrayRef, zodRef } from "../swagger/openapi-schemas";
+import { ApiListQuery, zodRef } from "../swagger/openapi-schemas";
 import { UsersService } from "./users.service";
 
 /**
@@ -84,12 +89,30 @@ export class UsersController {
   @Roles("EDITOR")
   @ApiOperation({
     operationId: "listUsers",
-    summary: "List all users",
-    description: "Every user, newest first. Unpaginated. For editors and above.",
+    summary: "List users",
+    description:
+      "One page of users, newest first unless asked otherwise. For editors and " +
+      "above.\n\n" +
+      "`search` matches name, surname and email, case-insensitively, and every " +
+      "whitespace-separated term has to match one of them — so `леся укра` " +
+      "finds a Леся Українка. `role` may be repeated to accept several " +
+      "(`?role=ADMIN&role=EDITOR`). `sort` accepts only the properties listed " +
+      "on it, and `?sort=role` orders by the privilege ladder rather than " +
+      "alphabetically, because that is the order the Postgres enum declares.\n\n" +
+      "Every parameter is optional and an empty one is read as absent, so a " +
+      "table can keep its controls in the URL and clear them without pruning " +
+      "the query string. An unrecognised parameter is a 400 rather than " +
+      "something ignored.",
   })
-  @ApiOkResponse({ description: "The users.", schema: zodArrayRef("User") })
-  findAll(): Promise<User[]> {
-    return this.users.findAll();
+  // Declared from the same schema the pipe below validates against — see
+  // ApiListQuery. Nothing about these parameters is written twice.
+  @ApiListQuery(userList)
+  @ApiOkResponse({ description: "A page of users.", schema: zodRef("UserPage") })
+  @ApiBadRequestResponse({ description: "The query does not match the schema." })
+  list(
+    @Query(new ZodValidationPipe(listUsersQuerySchema)) query: ListUsersQuery,
+  ): Promise<UserPage> {
+    return this.users.list(query);
   }
 
   // Declared after the bare `@Get()`, which is the order Nest registers them
