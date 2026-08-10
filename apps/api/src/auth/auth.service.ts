@@ -52,10 +52,10 @@ export class AuthService {
    * Signing in, which answers 401 to everything that is not exactly right and
    * says no more than that.
    *
-   * The three failures — no such address, an account with no password set, a
-   * password that does not match — are one answer and one duration. Anything
-   * finer grained would let someone with a list of email addresses find out
-   * which of them are members here.
+   * The four failures — no such address, an account with no password set, a
+   * password that does not match, and a deactivated account — are one answer
+   * and one duration. Anything finer grained would let someone with a list of
+   * email addresses find out which of them are members here.
    */
   async login({ email, password }: LoginInput): Promise<IssuedSession> {
     const account = await this.users.findForAuth(email);
@@ -66,7 +66,19 @@ export class AuthService {
       ? await verifyPassword(account.passwordHash, password)
       : await dummyVerify(password);
 
-    if (!account || !matches) {
+    // `active` is checked here rather than before the verify, and the ordering
+    // is the point: returning early on a deactivated account would skip the
+    // argon2 work every other rejection pays for, and the response would come
+    // back fast enough to tell an attacker that the address is real and the
+    // account is merely switched off. It costs one comparison to fail at the
+    // same speed as everything else.
+    //
+    // Someone whose account has been retired therefore reads "invalid email or
+    // password", which is not the most helpful thing that could be said to
+    // them. It is the same trade this method already makes for an account with
+    // no password set: whatever explaining is owed, it is owed by a person,
+    // through a channel that knows who they are.
+    if (!account || !matches || !account.active) {
       throw new UnauthorizedException("Invalid email or password.");
     }
 

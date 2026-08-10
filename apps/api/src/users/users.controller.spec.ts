@@ -49,6 +49,17 @@ describe("Users endpoints", () => {
   let asRoot: string;
   let asAuthor: string;
 
+  /**
+   * An admin whose token names the account every test targets, rather than
+   * `OTHER_USER_ID` like the four above.
+   *
+   * The distinction is the whole of the self-deactivation rule, and it is only
+   * visible here: the service takes the actor's id, so a controller that passed
+   * the role alone — or the wrong id — would still satisfy every other test in
+   * this file.
+   */
+  let asSelf: string;
+
   beforeAll(async () => {
     prisma = createPrismaMock();
 
@@ -62,11 +73,12 @@ describe("Users endpoints", () => {
     await app.init();
 
     const tokens = moduleRef.get(TokensService);
-    [asAuthor, asEditor, asAdmin, asRoot] = await Promise.all([
+    [asAuthor, asEditor, asAdmin, asRoot, asSelf] = await Promise.all([
       tokens.signAccess(OTHER_USER_ID, "AUTHOR"),
       tokens.signAccess(OTHER_USER_ID, "EDITOR"),
       tokens.signAccess(OTHER_USER_ID, "ADMIN"),
       tokens.signAccess(OTHER_USER_ID, "ROOT"),
+      tokens.signAccess(USER_ID, "ADMIN"),
     ]);
   });
 
@@ -443,6 +455,55 @@ describe("Users endpoints", () => {
       );
     });
 
+    /**
+     * Retiring an account over HTTP, and the assertion that it is one write:
+     * the column and the token bump reach Postgres in the same statement, so
+     * there is no moment where the account is deactivated and its refresh
+     * tokens still verify.
+     */
+    it("retires an account and ends its sessions in a single write", async () => {
+      prisma.user.update.mockResolvedValue(userRow({ active: false }));
+
+      await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .send({ active: false })
+        .expect(200);
+
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { active: false, tokenVersion: { increment: 1 } } }),
+      );
+    });
+
+    /**
+     * The same request from the account it targets. Nothing about the body
+     * changes — only who is asking — which is why this is the one test that
+     * would notice the controller handing the service a role instead of an
+     * actor, or the wrong id inside it.
+     */
+    it("403s when an admin tries to retire their own account", async () => {
+      const response = await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asSelf))
+        .send({ active: false })
+        .expect(403);
+
+      expect(response.body.message).toMatch(/sign back in/i);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // The rule is about retiring, not about acting on yourself. An account
+    // editing its own name is nobody's lockout.
+    it("lets that same account change anything else about itself", async () => {
+      prisma.user.update.mockResolvedValue(userRow({ name: "Ольга" }));
+
+      await http()
+        .patch(`/users/${USER_ID}`)
+        .set(...auth(asSelf))
+        .send({ name: "Ольга" })
+        .expect(200);
+    });
+
     it("lowercases an email being changed", async () => {
       prisma.user.update.mockResolvedValue(userRow());
 
@@ -569,6 +630,27 @@ describe("Users endpoints", () => {
         .expect(400);
 
       expect(prisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The common case, not the exceptional one. `Poem.author` and
+     * `Review.reviewer` are both `onDelete: Restrict`, so this is the answer
+     * for every account that has published or moderated anything — which is
+     * every account anybody would think to delete.
+     *
+     * Before the catch existed, Postgres's refusal reached the client as a 500.
+     * The message is asserted alongside the status because an administrator
+     * being told "no" is owed the operation that does apply.
+     */
+    it("409s rather than 500s when the account has poems or reviews", async () => {
+      prisma.user.delete.mockRejectedValue(prismaError("P2003"));
+
+      const response = await http()
+        .delete(`/users/${USER_ID}`)
+        .set(...auth(asAdmin))
+        .expect(409);
+
+      expect(response.body.message).toMatch(/deactivate it instead/i);
     });
   });
 

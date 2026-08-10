@@ -167,7 +167,10 @@ export class UsersController {
       "Changes only the fields present in the body; at least one is required. " +
       "Ids, timestamps and passwords are not writable here. Promoting an " +
       "account to ROOT requires both that no other account holds it and that " +
-      "the caller is the root; so does editing the root account itself.",
+      "the caller is the root; so does editing the root account itself. " +
+      "Sending `active: false` retires an account: it keeps everything it has " +
+      "written, every session for it ends immediately, and it can no longer " +
+      "sign in. Nobody may do that to their own account.",
   })
   @ApiParam({ name: "id", format: "uuid", description: "The user's id." })
   @ApiBody({ schema: zodRef("UpdateUser") })
@@ -180,7 +183,9 @@ export class UsersController {
     @Body(new ZodValidationPipe(updateUserSchema)) patch: UpdateUserInput,
     @CurrentUser() actor: Actor,
   ): Promise<User> {
-    return this.users.update(id, patch, actor.role);
+    // The whole actor, not just the role: retiring an account is refused when
+    // the account is the one asking, which is a question about `id`.
+    return this.users.update(id, patch, actor);
   }
 
   @Delete(":id")
@@ -192,13 +197,19 @@ export class UsersController {
     operationId: "deleteUser",
     summary: "Delete a user",
     description:
-      "Permanent. Deleting a user that is already gone is a 404, not a no-op. " +
+      "Permanent, and only available for an account that has left nothing " +
+      "behind: an account with poems or moderation history is refused with a " +
+      "409, and retiring it with `active: false` is what applies to it " +
+      "instead. Deleting a user that is already gone is a 404, not a no-op. " +
       "The root account can only be deleted by itself.",
   })
   @ApiParam({ name: "id", format: "uuid", description: "The user's id." })
   @ApiNoContentResponse({ description: "The user is gone." })
   @ApiBadRequestResponse({ description: "The id is not a UUID." })
   @ApiNotFoundResponse({ description: "No user has that id." })
+  @ApiConflictResponse({
+    description: "The account has poems or moderation history. Deactivate it instead.",
+  })
   remove(@Param("id", UUID_PARAM) id: string, @CurrentUser() actor: Actor): Promise<void> {
     return this.users.remove(id, actor.role);
   }

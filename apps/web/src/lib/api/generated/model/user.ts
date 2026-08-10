@@ -33,6 +33,8 @@ export interface User {
   surname: string;
   /** What the account is allowed to do. ROOT is the site's owner and there is at most one of them, ADMIN manages users, EDITOR moderates the queue, AUTHOR writes their own poems. */
   role: UserRole;
+  /** Whether the account may sign in. A deactivated account keeps everything it has written — poems already published stay published. */
+  active: boolean;
   /**
    * When the account was created.
    * @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$

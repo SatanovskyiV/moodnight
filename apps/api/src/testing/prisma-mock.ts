@@ -24,6 +24,7 @@ export interface UserRowFixture {
   name: string;
   surname: string;
   role: "ROOT" | "ADMIN" | "EDITOR" | "AUTHOR";
+  active: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -68,6 +69,7 @@ export function userRow(overrides: Partial<UserRowFixture> = {}): UserRowFixture
     name: "Леся",
     surname: "Українка",
     role: "AUTHOR",
+    active: true,
     createdAt: CREATED_AT,
     updatedAt: UPDATED_AT,
     ...overrides,
@@ -94,6 +96,7 @@ export function credentialRow(overrides: Partial<CredentialRowFixture> = {}) {
   return {
     id: USER_ID,
     role: "AUTHOR" as const,
+    active: true,
     passwordHash: FIXTURE_PASSWORD_HASH as string | null,
     tokenVersion: 0,
     ...overrides,
@@ -103,13 +106,14 @@ export function credentialRow(overrides: Partial<CredentialRowFixture> = {}) {
 export interface CredentialRowFixture {
   id: string;
   role: UserRowFixture["role"];
+  active: boolean;
   passwordHash: string | null;
   tokenVersion: number;
 }
 
 /** A row as the refresh path reads it — `SESSION_FIELDS`. */
 export function sessionRow(overrides: Partial<Omit<CredentialRowFixture, "passwordHash">> = {}) {
-  return { id: USER_ID, role: "AUTHOR" as const, tokenVersion: 0, ...overrides };
+  return { id: USER_ID, role: "AUTHOR" as const, active: true, tokenVersion: 0, ...overrides };
 }
 
 /** Ids for the poem fixtures, same UUIDv7 shape as the user ones. */

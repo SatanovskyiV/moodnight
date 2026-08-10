@@ -6,6 +6,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import {
   createPrismaMock,
   ONE_ROOT_INDEX,
+  OTHER_USER_ID,
   type PrismaMock,
   prismaError,
   USER_ID,
@@ -45,9 +46,23 @@ describe("UsersService", () => {
     name: true,
     surname: true,
     role: true,
+    active: true,
     createdAt: true,
     updatedAt: true,
   };
+
+  /**
+   * Who is asking. `update` takes the whole actor rather than a role, because
+   * one of its rules — nobody retires their own account — is about which row is
+   * making the request.
+   *
+   * Both hold `OTHER_USER_ID` while every test targets `USER_ID`, so the
+   * default throughout is an administrator acting on somebody else. The one
+   * test that wants the other case builds its actor inline, where the shared id
+   * is the whole point of the assertion and worth seeing.
+   */
+  const ADMIN = { id: OTHER_USER_ID, role: "ADMIN" } as const;
+  const ROOT = { id: OTHER_USER_ID, role: "ROOT" } as const;
 
   beforeEach(async () => {
     prisma = createPrismaMock();
@@ -293,7 +308,7 @@ describe("UsersService", () => {
     it("leaves a patch without an email alone", async () => {
       prisma.user.update.mockResolvedValue(userRow());
 
-      await service.update(USER_ID, { name: "Ольга" }, "ADMIN");
+      await service.update(USER_ID, { name: "Ольга" }, ADMIN);
 
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: USER_ID },
@@ -306,14 +321,91 @@ describe("UsersService", () => {
       const unknown = prismaError("P1001");
       prisma.user.update.mockRejectedValue(unknown);
 
-      await expect(service.update(USER_ID, { name: "Ольга" }, "ADMIN")).rejects.toBe(unknown);
+      await expect(service.update(USER_ID, { name: "Ольга" }, ADMIN)).rejects.toBe(unknown);
     });
 
     it("404s on a row that is gone before reaching the update", async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
-      await expect(service.update(USER_ID, { name: "Ольга" }, "ADMIN")).rejects.toMatchObject({
+      await expect(service.update(USER_ID, { name: "Ольга" }, ADMIN)).rejects.toMatchObject({
         status: 404,
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Retiring an account, which is the operation that actually applies to
+   * somebody who has used the site — `Poem.author` and `Review.reviewer` are
+   * both `Restrict`, so deleting them is refused by the database.
+   */
+  describe("deactivation", () => {
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue({ role: "AUTHOR" });
+      prisma.user.update.mockResolvedValue(userRow({ active: false }));
+    });
+
+    /**
+     * The column and the sign-out are one write, and that is the assertion —
+     * not that both happened, but that they happened in the same statement.
+     * Two calls would leave a window where the account is retired and its
+     * refresh tokens still verify, and would let the second half fail on its
+     * own.
+     */
+    it("ends every session in the same write that retires the account", async () => {
+      await service.update(USER_ID, { active: false }, ADMIN);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: { active: false, tokenVersion: { increment: 1 } },
+        select: PUBLIC_FIELDS,
+      });
+    });
+
+    // Nothing was issued while the account was down, so there is nothing to
+    // invalidate — and bumping anyway would cost the owner the sessions they
+    // are in the middle of being handed back.
+    it("does not touch the token version when reactivating", async () => {
+      await service.update(USER_ID, { active: true }, ADMIN);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: { active: true },
+        select: PUBLIC_FIELDS,
+      });
+    });
+
+    /**
+     * Unrecoverable by the person who did it: the write ends their session and
+     * the login path then refuses the credential that would undo it. On a site
+     * whose administration may be one person, nobody else may exist to undo it
+     * for them.
+     */
+    it("refuses to let anyone retire the account they are asking from", async () => {
+      const self = { id: USER_ID, role: "ADMIN" } as const;
+
+      await expect(service.update(USER_ID, { active: false }, self)).rejects.toMatchObject({
+        status: 403,
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // The rule is about retiring, not about the field: an account editing its
+    // own name — or turning itself back on, which it cannot reach anyway — is
+    // not what locks anybody out.
+    it("lets an account edit itself in every other way", async () => {
+      const self = { id: USER_ID, role: "ADMIN" } as const;
+
+      await expect(service.update(USER_ID, { name: "Ольга" }, self)).resolves.toBeDefined();
+    });
+
+    // An admin may not touch the root account at all, and that check runs
+    // before the write like the others.
+    it("still refuses an admin retiring the root account", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "ROOT" });
+
+      await expect(service.update(USER_ID, { active: false }, ADMIN)).rejects.toMatchObject({
+        status: 403,
       });
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
@@ -332,7 +424,7 @@ describe("UsersService", () => {
       await expect(service.create({ ...input, role: "ROOT" }, "ADMIN")).rejects.toMatchObject({
         status: 403,
       });
-      await expect(service.update(USER_ID, { role: "ROOT" }, "ADMIN")).rejects.toMatchObject({
+      await expect(service.update(USER_ID, { role: "ROOT" }, ADMIN)).rejects.toMatchObject({
         status: 403,
       });
 
@@ -346,7 +438,7 @@ describe("UsersService", () => {
     it("refuses to let an admin edit or delete the root account", async () => {
       prisma.user.findUnique.mockResolvedValue({ role: "ROOT" });
 
-      await expect(service.update(USER_ID, { name: "Ольга" }, "ADMIN")).rejects.toMatchObject({
+      await expect(service.update(USER_ID, { name: "Ольга" }, ADMIN)).rejects.toMatchObject({
         status: 403,
       });
       await expect(service.remove(USER_ID, "ADMIN")).rejects.toMatchObject({ status: 403 });
@@ -359,7 +451,7 @@ describe("UsersService", () => {
       prisma.user.findUnique.mockResolvedValue({ role: "ROOT" });
       prisma.user.update.mockResolvedValue(userRow({ role: "AUTHOR" }));
 
-      await expect(service.update(USER_ID, { role: "AUTHOR" }, "ROOT")).resolves.toBeDefined();
+      await expect(service.update(USER_ID, { role: "AUTHOR" }, ROOT)).resolves.toBeDefined();
       expect(prisma.user.update).toHaveBeenCalled();
     });
 
@@ -434,7 +526,10 @@ describe("UsersService", () => {
 
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
         where: { email: "poet@moodnight.dev" },
-        select: { id: true, role: true, passwordHash: true, tokenVersion: true },
+        // `active` is read beside the credential rather than in a query of its
+        // own: the login path cannot verify a password without also holding the
+        // answer to whether the account is allowed to use it.
+        select: { id: true, role: true, active: true, passwordHash: true, tokenVersion: true },
       });
     });
   });
@@ -468,6 +563,24 @@ describe("UsersService", () => {
       prisma.user.delete.mockRejectedValue(unknown);
 
       await expect(service.remove(USER_ID, "ADMIN")).rejects.toBe(unknown);
+    });
+
+    /**
+     * The ordinary case, not an edge one. Both relations pointing at `users`
+     * are `onDelete: Restrict`, so this is the answer for every account that
+     * has published or moderated anything — which is every account anyone would
+     * think to delete.
+     *
+     * Without the catch it reaches the client as a 500, and an administrator
+     * learns only that something broke. The message has to name the alternative
+     * that does apply, so the test asserts it points at deactivation rather
+     * than merely carrying the right status.
+     */
+    it("409s rather than 500s when poems or reviews still point at the account", async () => {
+      prisma.user.delete.mockRejectedValue(prismaError("P2003"));
+
+      await expect(service.remove(USER_ID, "ADMIN")).rejects.toMatchObject({ status: 409 });
+      await expect(service.remove(USER_ID, "ADMIN")).rejects.toThrow(/deactivate/i);
     });
   });
 });

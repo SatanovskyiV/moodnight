@@ -28,4 +28,6 @@ export interface UpdateUser {
   surname?: string;
   /** What the account is allowed to do. ROOT is the site's owner and there is at most one of them, ADMIN manages users, EDITOR moderates the queue, AUTHOR writes their own poems. */
   role?: UpdateUserRole;
+  /** Set false to retire an account: it can no longer sign in, and keeps its work. */
+  active?: boolean;
 }

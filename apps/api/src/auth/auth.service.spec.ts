@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaService } from "../prisma/prisma.service";
 import { authTestImports, authTestProviders } from "../testing/auth-harness";
@@ -15,8 +15,28 @@ import {
 } from "../testing/prisma-mock";
 import { UsersService } from "../users/users.service";
 import { AuthService } from "./auth.service";
+import type * as PasswordModule from "./password";
 import { dummyVerify, hashPassword, verifyPassword } from "./password";
 import { TokensService } from "./tokens.service";
+
+/**
+ * The real password functions, wrapped in spies.
+ *
+ * Not stubs — every implementation below is the genuine one, so the hashing
+ * block still exercises argon2 rather than a fake of it. The wrapper exists so
+ * one test can ask *whether* the verification ran, which is the only way to
+ * assert that a rejection paid the same cost as a successful sign-in. Timing it
+ * would be the direct measurement and a flaky one.
+ */
+vi.mock("./password", async (importOriginal) => {
+  const actual = await importOriginal<typeof PasswordModule>();
+
+  return {
+    ...actual,
+    verifyPassword: vi.fn(actual.verifyPassword),
+    dummyVerify: vi.fn(actual.dummyVerify),
+  };
+});
 
 /**
  * The parts of signing in that are not visible over HTTP: what the tokens
@@ -32,6 +52,10 @@ describe("AuthService", () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    // The module mock above outlives each test, unlike `prisma`, which is built
+    // fresh. Clearing the call history — not the implementations — is what
+    // keeps "was the password verified" a question about this test alone.
+    vi.clearAllMocks();
 
     const moduleRef = await Test.createTestingModule({
       imports: authTestImports(),
@@ -112,13 +136,47 @@ describe("AuthService", () => {
       expect(await tokens.verifyRefresh(refreshToken)).toMatchObject({ ver: 7, type: "refresh" });
     });
 
-    // Three failures, one answer. The account that has never set a password is
+    // Four failures, one answer. The account that has never set a password is
     // the case worth naming: a null hash must read as "cannot sign in", never
     // as "no password required".
     it("refuses an account whose password hash is null", async () => {
       prisma.user.findUnique.mockResolvedValue(credentialRow({ passwordHash: null }));
 
       await expect(auth.login(credentials)).rejects.toMatchObject({ status: 401 });
+    });
+
+    /**
+     * A retired account, holding the correct password. This is the whole point
+     * of the column: the credential is still valid and still refused.
+     */
+    it("refuses a deactivated account even with the right password", async () => {
+      prisma.user.findUnique.mockResolvedValue(credentialRow({ active: false }));
+
+      await expect(auth.login(credentials)).rejects.toMatchObject({ status: 401 });
+    });
+
+    /**
+     * The check has to sit *after* the argon2 verification, not before it.
+     *
+     * Returning early on a deactivated account would skip the work every other
+     * rejection pays for, and the response would come back fast enough to tell
+     * someone holding a list of addresses which of them are real accounts that
+     * happen to be switched off. Asserting the hash was read is what pins the
+     * ordering: a short-circuit would never have touched it.
+     */
+    it("still pays for the password check before refusing a deactivated account", async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        credentialRow({ active: false, passwordHash: FIXTURE_PASSWORD_HASH }),
+      );
+
+      await expect(auth.login(credentials)).rejects.toMatchObject({ status: 401 });
+
+      // An early `if (!account.active) throw` above the verification would fail
+      // here, and nowhere else — the status code is identical either way.
+      expect(vi.mocked(verifyPassword)).toHaveBeenCalledWith(
+        FIXTURE_PASSWORD_HASH,
+        FIXTURE_PASSWORD,
+      );
     });
 
     it("refuses an address that is not registered", async () => {

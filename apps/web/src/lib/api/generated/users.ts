@@ -77,7 +77,7 @@ export const getListUsersUrl = (params?: ListUsersParams) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    const explodeParameters = ["role"];
+    const explodeParameters = ["role", "active"];
 
     if (Array.isArray(value) && explodeParameters.includes(key)) {
       value.forEach((v) => {
@@ -517,7 +517,7 @@ export const getUpdateUserUrl = (id: string) => {
 };
 
 /**
- * Changes only the fields present in the body; at least one is required. Ids, timestamps and passwords are not writable here. Promoting an account to ROOT requires both that no other account holds it and that the caller is the root; so does editing the root account itself.
+ * Changes only the fields present in the body; at least one is required. Ids, timestamps and passwords are not writable here. Promoting an account to ROOT requires both that no other account holds it and that the caller is the root; so does editing the root account itself. Sending `active: false` retires an account: it keeps everything it has written, every session for it ends immediately, and it can no longer sign in. Nobody may do that to their own account.
  * @summary Update a user
  */
 export const updateUser = async (
@@ -617,11 +617,20 @@ export type deleteUserResponse404 = {
   status: 404;
 };
 
+export type deleteUserResponse409 = {
+  data: void;
+  status: 409;
+};
+
 export type deleteUserResponseSuccess = deleteUserResponse204 & {
   headers: Headers;
 };
 export type deleteUserResponseError = (
-  deleteUserResponse400 | deleteUserResponse401 | deleteUserResponse403 | deleteUserResponse404
+  | deleteUserResponse400
+  | deleteUserResponse401
+  | deleteUserResponse403
+  | deleteUserResponse404
+  | deleteUserResponse409
 ) & {
   headers: Headers;
 };
@@ -633,7 +642,7 @@ export const getDeleteUserUrl = (id: string) => {
 };
 
 /**
- * Permanent. Deleting a user that is already gone is a 404, not a no-op. The root account can only be deleted by itself.
+ * Permanent, and only available for an account that has left nothing behind: an account with poems or moderation history is refused with a 409, and retiring it with `active: false` is what applies to it instead. Deleting a user that is already gone is a 404, not a no-op. The root account can only be deleted by itself.
  * @summary Delete a user
  */
 export const deleteUser = async (

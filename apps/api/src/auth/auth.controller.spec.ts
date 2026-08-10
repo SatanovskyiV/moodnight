@@ -268,6 +268,27 @@ describe("Auth endpoints", () => {
       await http().post("/auth/refresh").set("cookie", cookie).expect(401);
     });
 
+    /**
+     * A deactivated account, holding a refresh token whose version still
+     * matches — which is the case the version check alone does not cover.
+     *
+     * Retiring an account increments `tokenVersion` in the same write, so every
+     * token issued before it already fails the check beside this one. A token
+     * minted in the moment between that write and this read would carry the new
+     * version and pass. Reading `active` is what makes deactivation take effect
+     * within one access-token lifetime rather than at the end of a thirty-day
+     * cookie, and stubbing a matching version here is what tests it rather than
+     * re-testing revocation.
+     */
+    it("401s for a deactivated account whose token version still matches", async () => {
+      const cookie = await signIn();
+      vi.clearAllMocks();
+
+      prisma.user.findUnique.mockResolvedValue(sessionRow({ active: false, tokenVersion: 0 }));
+
+      await http().post("/auth/refresh").set("cookie", cookie).expect(401);
+    });
+
     // The two token kinds are signed with different secrets, so an access token
     // presented as a refresh cookie cannot verify. Worth pinning: the whole
     // point of the split is that the long-lived credential and the widely-sent

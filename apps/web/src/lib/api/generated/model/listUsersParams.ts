@@ -40,4 +40,8 @@ export type ListUsersParams = {
    * @minItems 1
    */
   role?: ListUsersRoleItem[];
+  /**
+   * @minItems 1
+   */
+  active?: boolean[];
 };

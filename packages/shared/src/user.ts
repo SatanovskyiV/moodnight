@@ -37,6 +37,12 @@ export const userSchema = z
     name: z.string().min(1).max(100).meta({ example: "Леся" }),
     surname: z.string().min(1).max(100).meta({ example: "Українка" }),
     role: userRoleSchema,
+    active: z.boolean().meta({
+      description:
+        "Whether the account may sign in. A deactivated account keeps everything it " +
+        "has written — poems already published stay published.",
+      example: true,
+    }),
     createdAt: z.iso.datetime().meta({ description: "When the account was created." }),
     updatedAt: z.iso.datetime().meta({ description: "When the account was last written to." }),
   })
@@ -128,6 +134,22 @@ export type CreateUserInput = z.infer<typeof createUserSchema>;
  * `{}` would let a no-op request rewrite the row's history.
  */
 export const updateUserSchema = writableUserFields
+  .extend({
+    // Patchable, and deliberately not creatable — which is why it is added here
+    // rather than to `writableUserFields`. An account created already
+    // deactivated is an invitation nobody can accept, and there is no reason to
+    // be able to express one.
+    //
+    // `active: false` is how an account is retired: the API also ends every
+    // session the moment it lands, so this is a heavier change than the other
+    // fields here and the server refuses it in two cases no schema can see —
+    // the ROOT account (403), and the account making the request (403, because
+    // it would sign you out of the ability to undo it).
+    active: z.boolean().meta({
+      description: "Set false to retire an account: it can no longer sign in, and keeps its work.",
+      example: false,
+    }),
+  })
   .partial()
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, {
@@ -151,8 +173,10 @@ export type UpdateUserInput = z.infer<typeof updateUserSchema>;
  * - **sortable** — the columns a users table has headers for. `updatedAt` is
  *   absent because nothing displays it; it costs one word to add when something
  *   does.
- * - **filterable** — `role`, and its accepted values come from
- *   {@link userRoleSchema} itself, so the filter cannot drift from the enum.
+ * - **filterable** — `role`, whose accepted values come from
+ *   {@link userRoleSchema} itself so the filter cannot drift from the enum, and
+ *   `active`, which is what makes retired accounts something an administrator
+ *   can look at deliberately rather than a state buried in a table of everyone.
  *
  * Sorting by `role` orders by the Postgres enum's own declaration order, which
  * the 20260804120000_add_root_role migration deliberately made the privilege
@@ -176,7 +200,7 @@ export const userList = defineList({
   item: userSchema,
   searchable: ["name", "surname", "email"],
   sortable: ["name", "surname", "email", "role", "createdAt"],
-  filterable: ["role"],
+  filterable: ["role", "active"],
   defaultSort: "createdAt",
   defaultOrder: "desc",
 });

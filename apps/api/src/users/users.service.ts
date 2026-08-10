@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@moodnight/db";
 import {
+  type Actor,
   type CreateUserInput,
   initialsOf,
   type ListUsersQuery,
@@ -38,6 +39,7 @@ const PUBLIC_FIELDS = {
   name: true,
   surname: true,
   role: true,
+  active: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -46,18 +48,34 @@ const PUBLIC_FIELDS = {
  * What the login path needs and nothing else: enough to check a password, and
  * the token version to stamp into the session that follows — read here so a
  * successful sign-in costs two queries rather than three.
+ *
+ * `active` is one of the two places deactivation is enforced. It is read here,
+ * beside the credential, so the check costs nothing extra and cannot be reached
+ * around: there is no way to verify a password on this site without also
+ * holding the answer to whether the account is allowed to use it.
  */
 const CREDENTIAL_FIELDS = {
   id: true,
   role: true,
+  active: true,
   passwordHash: true,
   tokenVersion: true,
 } as const;
 
-/** What the refresh path needs: enough to check a token version and re-sign. */
+/**
+ * What the refresh path needs: enough to check a token version and re-sign.
+ *
+ * `active` is the other enforcement point, and the one it would be easy to
+ * leave out. Deactivating an account bumps its `tokenVersion`, so every refresh
+ * token already issued stops verifying — but a token minted in the seconds
+ * *after* that write would carry the new version and match. Reading the column
+ * here is what closes that, and what makes deactivation take effect within one
+ * access-token lifetime rather than at the end of a thirty-day cookie.
+ */
 const SESSION_FIELDS = {
   id: true,
   role: true,
+  active: true,
   tokenVersion: true,
 } as const;
 
@@ -82,6 +100,16 @@ const SLUG_INDEX = "users_slug_key";
 
 /** Prisma's code for "the row this `update` or `delete` targeted does not exist". */
 const RECORD_NOT_FOUND = "P2025";
+
+/**
+ * Prisma's code for "a foreign key still points at this row".
+ *
+ * Which, on this table, means the account has poems or moderation history —
+ * both relations are `onDelete: Restrict` in schema.prisma. Without this the
+ * database's refusal reaches the client as a 500, and an administrator learns
+ * only that something broke.
+ */
+const FOREIGN_KEY_VIOLATION = "P2003";
 
 type UserRow = Prisma.UserGetPayload<{ select: typeof PUBLIC_FIELDS }>;
 
@@ -192,6 +220,28 @@ function assertMayAppointRoot(actor: UserRole, role: UserRole | undefined): void
 function assertMayTouchRootAccount(actor: UserRole, target: UserRole): void {
   if (target === "ROOT" && actor !== "ROOT") {
     throw new ForbiddenException("Only the root account can change or remove itself.");
+  }
+}
+
+/**
+ * The rule that needs to know *who* is asking rather than only what they are
+ * allowed to do: nobody deactivates themselves.
+ *
+ * Not paternalism — it is unrecoverable by the person who did it. Deactivating
+ * an account ends its sessions in the same write, and the login path then
+ * refuses the credential that would undo it, so an administrator who ticks this
+ * box on their own row is locked out until somebody else unticks it. On a site
+ * whose administration may well be one person, that somebody may not exist.
+ *
+ * A root demoting or retiring themselves through another account is still open,
+ * which keeps the site transferable — the same shape as the ROOT rules above.
+ */
+function assertNotRetiringSelf(actorId: string, targetId: string, active?: boolean): void {
+  if (active === false && actorId === targetId) {
+    throw new ForbiddenException(
+      "Deactivating your own account would sign you out and leave you unable to sign back " +
+        "in. Ask another administrator to do it.",
+    );
   }
 }
 
@@ -326,12 +376,35 @@ export class UsersService {
    * There is no `password` in `UpdateUserInput`, and that is a deliberate
    * absence rather than an oversight — see the note on `updateUserSchema` in
    * @moodnight/shared.
+   *
+   * `active: false` is the one field here that does more than write a column,
+   * and it is why this method takes the whole actor while its siblings take
+   * only a role: retiring an account ends its sessions, and "you may not do
+   * that to yourself" is a question about which row is asking, not about what
+   * the asker is allowed to do.
    */
-  async update(id: string, patch: UpdateUserInput, actor: UserRole): Promise<User> {
-    assertMayAppointRoot(actor, patch.role);
-    assertMayTouchRootAccount(actor, await this.roleOf(id));
+  async update(id: string, patch: UpdateUserInput, actor: Actor): Promise<User> {
+    assertMayAppointRoot(actor.role, patch.role);
+    assertNotRetiringSelf(actor.id, id, patch.active);
+    assertMayTouchRootAccount(actor.role, await this.roleOf(id));
 
-    const data = patch.email ? { ...patch, email: normaliseEmail(patch.email) } : patch;
+    const data = {
+      ...patch,
+      ...(patch.email ? { email: normaliseEmail(patch.email) } : {}),
+      // Deactivation and sign-out are one write rather than two calls.
+      //
+      // The alternative — update the column, then `revokeSessions` — leaves a
+      // window in which the account is deactivated and its refresh tokens still
+      // verify, and leaves the pair able to half-succeed: the second query can
+      // fail on a database that has just scaled to zero, and the account would
+      // then be retired with its sessions intact and nothing to say so.
+      //
+      // Reactivation does not bump it back. Nothing was issued while the
+      // account was down, so there is nothing to invalidate, and a second
+      // increment would only cost the owner the sessions they are being handed
+      // back.
+      ...(patch.active === false ? { tokenVersion: { increment: 1 } } : {}),
+    };
 
     try {
       const user = await this.prisma.user.update({
@@ -359,12 +432,20 @@ export class UsersService {
   }
 
   /**
-   * Deletes a user, or 404s if there is nothing to delete.
+   * Deletes a user, or 404s if there is nothing to delete — and 409s if the
+   * account has left anything behind.
    *
-   * A hard delete is right while `User` stands alone. Once Phase 2's `Poem`
-   * carries an `authorId`, this becomes the decision it has been deferring:
-   * cascade the poems, reassign them, or soft-delete the account and keep the
-   * work. The referential action on that relation is where it gets made.
+   * That last case is most of them. `Poem.author` and `Review.reviewer` are
+   * both `onDelete: Restrict`, so this succeeds only for an account that never
+   * published and never moderated: an invitation nobody accepted, a duplicate
+   * created by mistake. Anyone who has actually used the site is refused here,
+   * and `active: false` through `update` is what retires them — the decision
+   * this method's comment spent two phases deferring, made in favour of keeping
+   * the work.
+   *
+   * The 409 is not a fallback for an error nobody expected. It is the ordinary
+   * answer for the ordinary case, and it says which of the two relations is
+   * holding the row so an administrator knows what they are being told.
    */
   async remove(id: string, actor: UserRole): Promise<void> {
     assertMayTouchRootAccount(actor, await this.roleOf(id));
@@ -376,6 +457,14 @@ export class UsersService {
     } catch (error) {
       if (isPrismaError(error, RECORD_NOT_FOUND)) {
         throw noSuchUser(id);
+      }
+
+      if (isPrismaError(error, FOREIGN_KEY_VIOLATION)) {
+        throw new ConflictException(
+          "This account has published poems or moderation history, and deleting it would " +
+            "take that with it. Deactivate it instead — it keeps the work and can no " +
+            "longer sign in.",
+        );
       }
 
       throw error;

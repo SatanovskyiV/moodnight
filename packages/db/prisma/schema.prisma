@@ -127,6 +127,25 @@ model User {
   /// the note under `@@map`.
   role UserRole @default(AUTHOR)
 
+  /// Whether the account may sign in. This is the site's alternative to
+  /// deleting someone, and it is the operation that actually applies to a real
+  /// account: `Poem.author` and `Review.reviewer` are both `Restrict`, so
+  /// anyone who has written or moderated anything cannot be deleted at all.
+  ///
+  /// It means *cannot sign in*, and nothing more. Poems already published stay
+  /// published — a URL a reader has shared is the same promise `slug` makes —
+  /// and taking one down is a change to that poem's `status`, not a
+  /// consequence of what happened to its author's account. Nothing on the
+  /// public read path looks at this column, deliberately: joining `users` into
+  /// the feed's query to check it would cost the `(status, published_at)` index
+  /// scan that makes the front page cheap.
+  ///
+  /// A boolean rather than a nullable `deactivatedAt`, for the reason spelled
+  /// out on `Poem.featured`: the administration table filters on this, and
+  /// `?active=false` against a nullable timestamp is a presence test the list
+  /// framework has no way to express.
+  active Boolean @default(true)
+
   /// What makes signing out mean something without a sessions table.
   ///
   /// Every refresh token carries the value this column held when it was issued,

@@ -99,6 +99,20 @@
                 "example": "AUTHOR"
               }
             }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "boolean",
+                "description": "Whether the account may sign in. A deactivated account keeps everything it has written — poems already published stay published.",
+                "example": true
+              }
+            }
           }
         ],
         "responses": {
@@ -226,7 +240,7 @@
         "tags": ["users"]
       },
       "patch": {
-        "description": "Changes only the fields present in the body; at least one is required. Ids, timestamps and passwords are not writable here. Promoting an account to ROOT requires both that no other account holds it and that the caller is the root; so does editing the root account itself.",
+        "description": "Changes only the fields present in the body; at least one is required. Ids, timestamps and passwords are not writable here. Promoting an account to ROOT requires both that no other account holds it and that the caller is the root; so does editing the root account itself. Sending `active: false` retires an account: it keeps everything it has written, every session for it ends immediately, and it can no longer sign in. Nobody may do that to their own account.",
         "operationId": "updateUser",
         "parameters": [
           {
@@ -286,7 +300,7 @@
         "tags": ["users"]
       },
       "delete": {
-        "description": "Permanent. Deleting a user that is already gone is a 404, not a no-op. The root account can only be deleted by itself.",
+        "description": "Permanent, and only available for an account that has left nothing behind: an account with poems or moderation history is refused with a 409, and retiring it with `active: false` is what applies to it instead. Deleting a user that is already gone is a 404, not a no-op. The root account can only be deleted by itself.",
         "operationId": "deleteUser",
         "parameters": [
           {
@@ -315,6 +329,9 @@
           },
           "404": {
             "description": "No user has that id."
+          },
+          "409": {
+            "description": "The account has poems or moderation history. Deactivate it instead."
           }
         },
         "security": [
@@ -722,6 +739,11 @@
             "description": "What the account is allowed to do. ROOT is the site's owner and there is at most one of them, ADMIN manages users, EDITOR moderates the queue, AUTHOR writes their own poems.",
             "example": "AUTHOR"
           },
+          "active": {
+            "type": "boolean",
+            "description": "Whether the account may sign in. A deactivated account keeps everything it has written — poems already published stay published.",
+            "example": true
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -735,7 +757,7 @@
             "description": "When the account was last written to."
           }
         },
-        "required": ["id", "email", "name", "surname", "role", "createdAt", "updatedAt"],
+        "required": ["id", "email", "name", "surname", "role", "active", "createdAt", "updatedAt"],
         "additionalProperties": false,
         "description": "A registered user."
       },
@@ -806,6 +828,11 @@
             "enum": ["ROOT", "ADMIN", "EDITOR", "AUTHOR"],
             "description": "What the account is allowed to do. ROOT is the site's owner and there is at most one of them, ADMIN manages users, EDITOR moderates the queue, AUTHOR writes their own poems.",
             "example": "AUTHOR"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Set false to retire an account: it can no longer sign in, and keeps its work.",
+            "example": false
           }
         },
         "additionalProperties": false,

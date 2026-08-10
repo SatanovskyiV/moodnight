@@ -68,10 +68,17 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, REFRESH_STRAT
 
     const account = await this.users.findForRefresh(payload.sub);
 
-    // One message for "the account is gone" and "the token was revoked" — the
-    // holder of a rejected token is owed the fact that it no longer works, not
-    // a way to probe which accounts still exist.
-    if (!account || account.tokenVersion !== payload.ver) {
+    // One message for "the account is gone", "the account was deactivated" and
+    // "the token was revoked" — the holder of a rejected token is owed the fact
+    // that it no longer works, not a way to probe which accounts still exist.
+    //
+    // The `active` check is not made redundant by the version check beside it.
+    // Deactivating an account increments `tokenVersion` in the same write, so
+    // every token issued before it stops matching — but a token minted in the
+    // moment between that write and this read would carry the new version and
+    // pass. Reading the column is what makes deactivation immediate rather than
+    // almost immediate.
+    if (!account || !account.active || account.tokenVersion !== payload.ver) {
       throw new UnauthorizedException("That session has ended. Sign in again.");
     }
 
