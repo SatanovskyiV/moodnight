@@ -11,6 +11,7 @@ import {
 
 import { listArgs, type RelationFilter, toPage } from "../common/list-query";
 import { PrismaService } from "../prisma/prisma.service";
+import { type FullPoemRow, POEM_FIELDS, type PoemRow } from "./poem-fields";
 
 /**
  * The public read path. Everything here answers anonymous requests, is cached
@@ -23,39 +24,6 @@ import { PrismaService } from "../prisma/prisma.service";
  * `listArgs` as a base constraint that no query parameter can lift, and spelled
  * into the one `findFirst` that does not go through the list framework.
  */
-
-/**
- * The author columns a reader is shown, and the boundary that keeps the rest
- * off the wire.
- *
- * `email`, `role`, `passwordHash` and `tokenVersion` all live on the same row
- * as `penName`, and a nested `author: true` would hand every one of them to
- * anonymous readers on every card in the feed. Naming the five wanted columns
- * is what makes that impossible rather than merely unintended — the same
- * argument as `PUBLIC_FIELDS` in the users service, and it matters more here
- * because this response is public.
- */
-const AUTHOR_FIELDS = {
-  slug: true,
-  penName: true,
-  initials: true,
-  roleTitle: true,
-  avatarUrl: true,
-} as const;
-
-/** The columns every poem shape shares. `body` is added by the ones that need it. */
-const POEM_FIELDS = {
-  id: true,
-  slug: true,
-  title: true,
-  subtitle: true,
-  publishedAt: true,
-  createdAt: true,
-  readCount: true,
-  featured: true,
-  author: { select: AUTHOR_FIELDS },
-  tags: { select: { tag: { select: { name: true, slug: true } } } },
-} as const;
 
 /**
  * The constraint that makes these endpoints public.
@@ -85,9 +53,6 @@ const POEM_RELATIONS: Record<string, RelationFilter<Prisma.PoemWhereInput>> = {
   tag: (slugs) => ({ tags: { some: { tag: { slug: { in: [...slugs] } } } } }),
   author: (slugs) => ({ author: { slug: { in: [...slugs] } } }),
 };
-
-type PoemRow = Prisma.PoemGetPayload<{ select: typeof POEM_FIELDS }>;
-type FullPoemRow = Prisma.PoemGetPayload<{ select: typeof POEM_FIELDS & { body: true } }>;
 
 /**
  * The shared half of both mappers: Prisma's `Date`s become ISO strings, and the

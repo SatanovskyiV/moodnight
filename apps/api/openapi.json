@@ -622,6 +622,52 @@
         },
         "summary": "List published poems",
         "tags": ["poems"]
+      },
+      "post": {
+        "description": "Creates a poem owned by the account making the request. There is no field for an author — a poem belongs to whoever is holding the token.\n\n`status` may be omitted, in which case the poem is a DRAFT and nobody but its author sees it. An author may also send PENDING_REVIEW, which puts it in the moderation queue; PUBLISHED is an editor's to set, and is a 403 otherwise.\n\nThe slug is derived from the title, disambiguated with a numeric suffix if that address is taken, and then fixed for the life of the poem — retitling it later does not move it.\n\n`tags` are slugs of themes that already exist. An unknown one is a 400 naming it: themes are curated, and writing a poem is not how a new one is created.",
+        "operationId": "createPoem",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePoem"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The poem, as written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioPoem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body does not match the schema, or names a theme that does not exist."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "Only an editor may publish outright."
+          },
+          "409": {
+            "description": "Two requests raced for the same slug. Nothing was created."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Write a poem",
+        "tags": ["poems"]
       }
     },
     "/poems/{slug}": {
@@ -656,6 +702,108 @@
           }
         },
         "summary": "Get a poem",
+        "tags": ["poems"]
+      }
+    },
+    "/poems/{id}": {
+      "patch": {
+        "description": "Changes only the fields present in the body; at least one is required. An author may change their own poems, an editor anybody's.\n\nThe slug is not writable and does not follow the title: a poem's address is settled when it is created, because a link somebody has shared is a promise. Neither are the author, the read count, or the publication date — the last of which is stamped by the server the first time the poem is published, and kept if it is taken down and put back.\n\n`status: PUBLISHED` and `featured` are both editors' decisions and a 403 otherwise. `status: DRAFT` on a published poem takes it down, which is the reversible act that has to happen before it can be deleted.\n\n`tags` replaces the whole set rather than adding to it, so `[]` files the poem under nothing and omitting the field leaves its themes alone.",
+        "operationId": "updatePoem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The poem's id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePoem"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The poem, as changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioPoem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The id or the body does not match the schema."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The poem is somebody else's, or the change is an editor's to make."
+          },
+          "404": {
+            "description": "No poem has that id."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Change a poem",
+        "tags": ["poems"]
+      },
+      "delete": {
+        "description": "Permanent, and only available for a poem that is not currently public. A published poem is refused with a 409: readers may have its address, so taking it down (`status: DRAFT`) is a separate and reversible decision that has to be made first.\n\nDeleting takes the poem's themes and its moderation history with it. Deleting a poem that is already gone is a 404, not a no-op.",
+        "operationId": "deletePoem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The poem's id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The poem is gone."
+          },
+          "400": {
+            "description": "The id is not a UUID."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The poem is somebody else's."
+          },
+          "404": {
+            "description": "No poem has that id."
+          },
+          "409": {
+            "description": "The poem is published. Take it down first."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a poem",
         "tags": ["poems"]
       }
     }
@@ -1211,6 +1359,195 @@
         "required": ["items", "total", "page", "perPage", "pageCount"],
         "additionalProperties": false,
         "description": "A page of poems, and how many match in total."
+      },
+      "StudioPoem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "UUIDv7 — time-ordered, so it sorts by creation."
+          },
+          "slug": {
+            "type": "string",
+            "description": "The poem's address.",
+            "example": "tin-nad-polem"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Тінь над полем"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": "The line under the title, if any.",
+            "example": "із циклу «Спалені листи»",
+            "type": "string",
+            "maxLength": 200
+          },
+          "author": {
+            "$ref": "#/components/schemas/PoemAuthor"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoemTag"
+            },
+            "description": "Themes, possibly none."
+          },
+          "readCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How many times it has been opened.",
+            "example": 1247
+          },
+          "featured": {
+            "type": "boolean",
+            "description": "Whether an editor has put it on the front page.",
+            "example": false
+          },
+          "body": {
+            "type": "string",
+            "description": "The poem, newline-separated."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["DRAFT", "PENDING_REVIEW", "PUBLISHED", "REJECTED"],
+            "description": "Where the poem is on its way to being public. Only PUBLISHED poems are returned by the public endpoints.",
+            "example": "PUBLISHED"
+          },
+          "publishedAt": {
+            "nullable": true,
+            "description": "When the poem became public, or null if it never has.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When the poem was first written."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When it was last saved."
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "subtitle",
+          "author",
+          "tags",
+          "readCount",
+          "featured",
+          "body",
+          "status",
+          "publishedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false,
+        "description": "A poem as its author sees it, drafts included."
+      },
+      "CreatePoem": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Тінь над полем"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": "The line under the title, if any.",
+            "example": "із циклу «Спалені листи»",
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "The poem, newline-separated, as it should be read. Plain text — the line breaks are content, not formatting.",
+            "example": "Тінь над полем лягла,\nі вітер затих."
+          },
+          "tags": {
+            "description": "Slugs of existing tags, at most 6. Replaces the whole set.",
+            "example": ["melankholiia", "nich"],
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": ["DRAFT", "PENDING_REVIEW", "PUBLISHED"],
+            "description": "DRAFT keeps the poem private, PENDING_REVIEW submits it to the queue, and PUBLISHED makes it public — the last of which is an editor's to set. Rejecting is not here: it carries a note, and that is the queue's own endpoint.",
+            "example": "PENDING_REVIEW"
+          }
+        },
+        "required": ["title", "body"],
+        "additionalProperties": false,
+        "description": "The fields needed to create a poem."
+      },
+      "UpdatePoem": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Тінь над полем"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": "The line under the title, if any.",
+            "example": "із циклу «Спалені листи»",
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "The poem, newline-separated, as it should be read. Plain text — the line breaks are content, not formatting.",
+            "example": "Тінь над полем лягла,\nі вітер затих."
+          },
+          "tags": {
+            "description": "Slugs of existing tags, at most 6. Replaces the whole set.",
+            "example": ["melankholiia", "nich"],
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": ["DRAFT", "PENDING_REVIEW", "PUBLISHED"],
+            "description": "DRAFT keeps the poem private, PENDING_REVIEW submits it to the queue, and PUBLISHED makes it public — the last of which is an editor's to set. Rejecting is not here: it carries a note, and that is the queue's own endpoint.",
+            "example": "PENDING_REVIEW"
+          },
+          "featured": {
+            "type": "boolean",
+            "description": "Whether the poem sits on the front page. Editors and above.",
+            "example": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "The fields to change on a poem. At least one is required."
       }
     }
   }

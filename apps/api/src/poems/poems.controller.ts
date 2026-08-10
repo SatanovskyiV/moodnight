@@ -36,6 +36,10 @@ import { PoemsService } from "./poems.service";
  * rather than joined wholesale. A poem in the queue and an author's email
  * address are both unreachable from here by construction, not by a guard that
  * a future route might forget to repeat.
+ *
+ * Writing poems lives in `PoemWritesController`, on this same path and behind
+ * guards — a second class precisely so that the paragraph above stays true of
+ * this one.
  */
 @ApiTags("poems")
 @Controller("poems")

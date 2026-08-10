@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.0.0
  */
 
+export * from "./createPoem";
+export * from "./createPoemStatus";
 export * from "./createUser";
 export * from "./createUserRole";
 export * from "./health";
@@ -25,6 +27,10 @@ export * from "./poemSummary";
 export * from "./poemTag";
 export * from "./register";
 export * from "./session";
+export * from "./studioPoem";
+export * from "./studioPoemStatus";
+export * from "./updatePoem";
+export * from "./updatePoemStatus";
 export * from "./updateUser";
 export * from "./updateUserRole";
 export * from "./user";

@@ -24,6 +24,12 @@ import { slugify } from "@moodnight/shared";
  * A row still needs an address, and an empty one would collapse every such row
  * onto the same unique key. The suffixing below turns the second into
  * `author-2`, which is ugly and honest and reachable.
+ *
+ * It is the default rather than the only value because the word appears in the
+ * URL: `/author/author` is the honest answer for a nameless account and
+ * `/poem/author` is simply wrong, so the poems path passes `"poem"`. Both
+ * functions take it, and a caller that overrides one must override the other —
+ * see {@link slugPrefix}.
  */
 const FALLBACK = "author";
 
@@ -31,9 +37,14 @@ const FALLBACK = "author";
  * @param source the human string to derive from — a pen name, a poem's title
  * @param taken every existing slug that begins with the derived base, which the
  *   caller fetches with one indexed `startsWith` query
+ * @param fallback the base to use when `source` transliterates to nothing
  */
-export function uniqueSlug(source: string, taken: readonly string[]): string {
-  const base = slugify(source) || FALLBACK;
+export function uniqueSlug(
+  source: string,
+  taken: readonly string[],
+  fallback: string = FALLBACK,
+): string {
+  const base = slugify(source) || fallback;
   const used = new Set(taken);
 
   if (!used.has(base)) {
@@ -57,8 +68,10 @@ export function uniqueSlug(source: string, taken: readonly string[]): string {
  *
  * Exported so the two steps cannot disagree: fetching the rows that begin with
  * one string and then suffixing a different one would look right and quietly
- * hand back a slug that is already taken.
+ * hand back a slug that is already taken. Which is also why `fallback` is on
+ * both — passing it to one and not the other reintroduces exactly that bug, for
+ * the one input where it bites.
  */
-export function slugPrefix(source: string): string {
-  return slugify(source) || FALLBACK;
+export function slugPrefix(source: string, fallback: string = FALLBACK): string {
+  return slugify(source) || fallback;
 }

@@ -3,16 +3,23 @@ import { z } from "zod";
 import { defineList } from "./list";
 
 /**
- * The public read path's contract — what a reader's browser receives from
- * `GET /poems` and `GET /poems/:slug`, and the shapes the ISR pages are built
- * from.
+ * A poem's contract, on both paths.
  *
- * Two schemas describe a poem here rather than one, and the split is the whole
- * design: a **summary** carries a teaser and goes out twelve at a time to an
- * infinite feed, while the **full** poem carries its body and goes out once,
- * to its own page. Sending whole bodies to the feed would multiply the one
- * payload the scroller downloads over and over by the length of the longest
- * poem on the page, for text no card renders.
+ * **The read path** — what a reader's browser receives from `GET /poems` and
+ * `GET /poems/:slug`, and the shapes the ISR pages are built from. Two schemas
+ * describe a poem there rather than one, and the split is the whole design: a
+ * **summary** carries a teaser and goes out twelve at a time to an infinite
+ * feed, while the **full** poem carries its body and goes out once, to its own
+ * page. Sending whole bodies to the feed would multiply the one payload the
+ * scroller downloads over and over by the length of the longest poem on the
+ * page, for text no card renders.
+ *
+ * **The write path** — what an author sends to `POST /poems` and
+ * `PATCH /poems/:id`, and the third shape, {@link studioPoemSchema}, that both
+ * answer with. It is not `poemSchema`: a poem that has just been created is a
+ * draft, and a draft has a `status` worth seeing and no publication date at
+ * all. Answering a create with a schema that promises `publishedAt` would mean
+ * either lying about it or refusing to return the row that was just written.
  */
 
 /**
@@ -211,3 +218,184 @@ export const poemPageSchema = poemList.page.meta({
 });
 
 export type PoemPage = z.infer<typeof poemPageSchema>;
+
+/**
+ * A poem as the person who wrote it sees it — the shape `POST /poems` and
+ * `PATCH /poems/:id` answer with.
+ *
+ * Three differences from {@link poemSchema}, and each of them is why this
+ * exists rather than being the same schema:
+ *
+ * - **`status` is present.** On the read path it is absent because the answer
+ *   is always PUBLISHED and a constant field is noise. Here it is the single
+ *   most important thing on the row — where the poem is between a draft and a
+ *   page — and the studio's dashboard is mostly a rendering of it.
+ * - **`publishedAt` is nullable, and honestly so.** A draft has never been
+ *   published. The read path's non-nullable version is true only because every
+ *   query behind it pins the status; nothing pins it here.
+ * - **`updatedAt` is present.** "Saved just now" is what an editor needs to
+ *   see and a reader does not.
+ *
+ * `readCount` and `featured` come along unchanged and are both read-only in
+ * practice: nothing an author sends sets them, and `featured` is writable only
+ * through {@link updatePoemSchema} by an editor.
+ */
+export const studioPoemSchema = poemCoreSchema
+  .omit({ publishedAt: true })
+  .extend({
+    body: z.string().meta({ description: "The poem, newline-separated." }),
+    status: poemStatusSchema,
+    publishedAt: z.iso.datetime().nullable().meta({
+      description: "When the poem became public, or null if it never has.",
+    }),
+    createdAt: z.iso.datetime().meta({ description: "When the poem was first written." }),
+    updatedAt: z.iso.datetime().meta({ description: "When it was last saved." }),
+  })
+  .meta({ description: "A poem as its author sees it, drafts included." });
+
+export type StudioPoem = z.infer<typeof studioPoemSchema>;
+
+/**
+ * The three statuses a client may ask for, out of the four the column holds.
+ *
+ * REJECTED is deliberately not among them. A rejection is not a field — it is a
+ * decision with a reason attached, and the reason lives on a `Review` row that
+ * the author is owed and that nothing here writes. Accepting `status: REJECTED`
+ * on a PATCH would let an editor bounce a poem back with no note and no record
+ * of who did it, which is precisely the state the `Review` model exists to
+ * prevent. Approving and rejecting from the queue is Phase 4's, and it goes
+ * through its own endpoint because it writes two rows and not one.
+ *
+ * Of the three that are here, only two are an author's to choose — see
+ * `assertMaySetStatus` in the API, which is where the ladder is applied.
+ */
+export const writablePoemStatusSchema = z.enum(["DRAFT", "PENDING_REVIEW", "PUBLISHED"]).meta({
+  description:
+    "DRAFT keeps the poem private, PENDING_REVIEW submits it to the queue, and " +
+    "PUBLISHED makes it public — the last of which is an editor's to set. " +
+    "Rejecting is not here: it carries a note, and that is the queue's own endpoint.",
+  example: "PENDING_REVIEW",
+});
+
+export type WritablePoemStatus = z.infer<typeof writablePoemStatusSchema>;
+
+/**
+ * The longest body the API will accept.
+ *
+ * Not a limit the column has — `body` is `Text`, and Postgres would take a
+ * megabyte without complaint. It is a limit on what one request may cost, the
+ * same argument `passwordSchema`'s maximum makes: this row is written by a
+ * function that bills by the millisecond and read by a feed that cuts it to six
+ * lines. Twenty thousand characters is around three hundred lines of verse,
+ * which is past any poem this site will hold and far short of an attack.
+ *
+ * Exported because the studio's editor shows the count, and a counter that
+ * disagrees with the server is worse than none.
+ */
+export const POEM_BODY_MAX = 20_000;
+
+/**
+ * How many themes one poem may carry.
+ *
+ * Tags are how the archive is browsed, so a poem filed under everything is a
+ * poem filed under nothing. Six is more than any of the seeded poems use.
+ */
+export const POEM_TAGS_MAX = 6;
+
+/**
+ * Everything a client may write to a poem, and the base both the create and the
+ * update schema are built from.
+ *
+ * `title` and `subtitle` are picked from {@link poemCoreSchema} rather than
+ * re-declared, so their limits are written once and a request is checked
+ * against exactly what the response promises.
+ *
+ * What is *absent* is the more interesting half, and none of it is an
+ * oversight:
+ *
+ * - **`slug`** — derived from the title by the server and then frozen for the
+ *   life of the row. A published URL is a promise, so renaming a poem
+ *   deliberately does not move its address; the same rule `User.slug` follows.
+ * - **`author`** — a poem's author is whoever is holding the token. There is no
+ *   field to carry somebody else's id, which is what makes posting under
+ *   another name impossible rather than merely guarded against.
+ * - **`readCount`** — a counter the site owns.
+ * - **`publishedAt`** — a consequence of `status`, stamped by the server. Two
+ *   writable fields that have to agree is one more thing that can disagree.
+ */
+const writablePoemFields = poemCoreSchema.pick({ title: true, subtitle: true }).extend({
+  // Optional on top of nullable, and the two mean different things on a PATCH:
+  // absent leaves the subtitle alone, `null` removes it.
+  subtitle: poemCoreSchema.shape.subtitle.optional(),
+  body: z
+    .string()
+    .min(1, "A poem needs some words.")
+    .max(POEM_BODY_MAX)
+    .meta({
+      description:
+        "The poem, newline-separated, as it should be read. Plain text — the line " +
+        "breaks are content, not formatting.",
+      example: "Тінь над полем лягла,\nі вітер затих.",
+    }),
+  // Slugs of tags that already exist, not names to create. Tags are curated
+  // (see the note on the `Tag` model in packages/db): a free-form list typed by
+  // five people is how browsing by theme stops working, so an unknown slug is a
+  // 400 naming it rather than a seventh spelling of "Меланхолія".
+  //
+  // On a PATCH this replaces the whole set — `[]` files the poem under nothing,
+  // absent leaves its themes as they are.
+  tags: z
+    .array(z.string().max(80))
+    .max(POEM_TAGS_MAX)
+    .optional()
+    .meta({
+      description: `Slugs of existing tags, at most ${POEM_TAGS_MAX}. Replaces the whole set.`,
+      example: ["melankholiia", "nich"],
+    }),
+  status: writablePoemStatusSchema.optional(),
+});
+
+/**
+ * What a client sends to `POST /poems`.
+ *
+ * `status` may be omitted, in which case the column's `@default(DRAFT)` in
+ * packages/db decides — so the default is written in one place, the same
+ * arrangement `role` has on `createUserSchema`.
+ *
+ * Strict rather than stripping: an unrecognised key is a 400. An author whose
+ * editor sends `content` instead of `body` should hear about it on the request
+ * that did nothing, rather than discover it when the poem comes back empty.
+ */
+export const createPoemSchema = writablePoemFields
+  .strict()
+  .meta({ description: "The fields needed to create a poem." });
+
+export type CreatePoemInput = z.infer<typeof createPoemSchema>;
+
+/**
+ * What a client sends to `PATCH /poems/:id` — any subset of the writable
+ * fields, and at least one of them.
+ *
+ * The at-least-one rule is not pedantry: Prisma stamps `updatedAt` on every
+ * `update` regardless of whether the data changes anything, so accepting `{}`
+ * would let a no-op request move a poem's "saved" time.
+ */
+export const updatePoemSchema = writablePoemFields
+  .extend({
+    // Patchable and deliberately not creatable, for the reason `active` is the
+    // other way round on a user: a poem cannot be on the front page before it
+    // is a poem. This is an editorial decision about the home page rather than
+    // anything about the text, so the API accepts it only from an editor.
+    featured: z.boolean().meta({
+      description: "Whether the poem sits on the front page. Editors and above.",
+      example: true,
+    }),
+  })
+  .partial()
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: "Provide at least one field to change.",
+  })
+  .meta({ description: "The fields to change on a poem. At least one is required." });
+
+export type UpdatePoemInput = z.infer<typeof updatePoemSchema>;

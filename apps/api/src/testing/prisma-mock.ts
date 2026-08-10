@@ -174,6 +174,59 @@ export function poemRow(overrides: Partial<PoemRowFixture> = {}): PoemRowFixture
 }
 
 /**
+ * A poem as the *write* path selects it — `STUDIO_FIELDS`, which is the read
+ * path's columns plus the three an author cannot work without.
+ *
+ * Defaults to a published poem so a spec has to say `{ status: "DRAFT" }` when
+ * it means one; the alternative default would let the "a published poem cannot
+ * be deleted" case pass without ever exercising it.
+ */
+export function studioPoemRow(overrides: Partial<StudioPoemRowFixture> = {}) {
+  return {
+    ...poemRow(),
+    status: "PUBLISHED" as const,
+    updatedAt: UPDATED_AT,
+    ...overrides,
+  };
+}
+
+export interface StudioPoemRowFixture extends PoemRowFixture {
+  status: "DRAFT" | "PENDING_REVIEW" | "PUBLISHED" | "REJECTED";
+  updatedAt: Date;
+}
+
+/**
+ * The three columns the write path reads before it decides whether a caller may
+ * write — `OWNERSHIP_FIELDS`.
+ *
+ * `authorId` defaults to {@link USER_ID}, the account the auth harness mints its
+ * tokens for, so the ordinary case is "this poem is mine". A spec testing the
+ * ownership rule passes `OTHER_USER_ID`, and the difference between the two is
+ * the whole of that rule.
+ */
+export function ownershipRow(
+  overrides: Partial<{
+    authorId: string;
+    status: StudioPoemRowFixture["status"];
+    publishedAt: Date | null;
+  }> = {},
+) {
+  return {
+    authorId: USER_ID,
+    status: "DRAFT" as StudioPoemRowFixture["status"],
+    publishedAt: null as Date | null,
+    ...overrides,
+  };
+}
+
+/** A tag as `resolveTags` selects it: the id it needs and the slug it checks. */
+export const TAG_ID = "0192f5a3-2f5e-7d60-b172-4d5e6f708192";
+
+export function tagRow(overrides: Partial<{ id: string; slug: string }> = {}) {
+  return { id: TAG_ID, slug: "melankholiia", ...overrides };
+}
+
+/**
  * Only the delegate methods the app actually calls. Adding a query elsewhere
  * means adding it here too, and the failure when it is missing —
  * `prisma.user.upsert is not a function` — points straight at the untested call.
@@ -199,12 +252,26 @@ export function createPrismaMock() {
       delete: vi.fn(),
     },
     poem: {
-      findMany: vi.fn(),
+      // Defaulted to an empty result for the same reason the users one is: the
+      // write path's `deriveSlug` reads the neighbouring slugs, and no spec
+      // about creating a poem is written to think about that query.
+      findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn(),
-      // `findFirst` and not `findUnique`, matching the service: the public
-      // lookup carries the PUBLISHED constraint alongside the slug, which
-      // `findUnique` has no way to accept.
+      // `findFirst` and not `findUnique` on the read path: the public lookup
+      // carries the PUBLISHED constraint alongside the slug, which `findUnique`
+      // has no way to accept. The write path uses `findUnique` below, because it
+      // looks a poem up by its id and applies the constraints itself.
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    tag: {
+      // The write path resolves tag slugs to ids before it writes a poem.
+      // Defaulted to nothing, so a spec that sends `tags` without stubbing this
+      // fails on the 400 it would really get rather than on `undefined.length`.
+      findMany: vi.fn().mockResolvedValue([]),
     },
   };
 }

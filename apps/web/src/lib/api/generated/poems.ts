@@ -5,20 +5,23 @@
  * Read and write endpoints for the MoodNight poetry site. Response shapes come from the zod schemas in @moodnight/shared, the same ones the API validates against.
  * OpenAPI spec version: 0.0.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { ListPoemsParams, Poem, PoemPage } from "./model";
+import type { CreatePoem, ListPoemsParams, Poem, PoemPage, StudioPoem, UpdatePoem } from "./model";
 
 import { request } from "../request";
 
@@ -195,6 +198,127 @@ export function useListPoems<TData = Awaited<ReturnType<typeof listPoems>>, TErr
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export type createPoemResponse201 = {
+  data: StudioPoem;
+  status: 201;
+};
+
+export type createPoemResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type createPoemResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type createPoemResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type createPoemResponse409 = {
+  data: void;
+  status: 409;
+};
+
+export type createPoemResponseSuccess = createPoemResponse201 & {
+  headers: Headers;
+};
+export type createPoemResponseError = (
+  createPoemResponse400 | createPoemResponse401 | createPoemResponse403 | createPoemResponse409
+) & {
+  headers: Headers;
+};
+
+export type createPoemResponse = createPoemResponseSuccess | createPoemResponseError;
+
+export const getCreatePoemUrl = () => {
+  return `/poems`;
+};
+
+/**
+ * Creates a poem owned by the account making the request. There is no field for an author — a poem belongs to whoever is holding the token.
+ *
+ * `status` may be omitted, in which case the poem is a DRAFT and nobody but its author sees it. An author may also send PENDING_REVIEW, which puts it in the moderation queue; PUBLISHED is an editor's to set, and is a 403 otherwise.
+ *
+ * The slug is derived from the title, disambiguated with a numeric suffix if that address is taken, and then fixed for the life of the poem — retitling it later does not move it.
+ *
+ * `tags` are slugs of themes that already exist. An unknown one is a 400 naming it: themes are curated, and writing a poem is not how a new one is created.
+ * @summary Write a poem
+ */
+export const createPoem = async (
+  createPoem: CreatePoem,
+  options?: Parameters<typeof request>[1],
+): Promise<createPoemResponse> => {
+  return request<createPoemResponse>(getCreatePoemUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPoem),
+  });
+};
+
+export const getCreatePoemMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPoem>>,
+    TError,
+    { data: CreatePoem },
+    TContext
+  >;
+  request?: SecondParameter<typeof request>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPoem>>,
+  TError,
+  { data: CreatePoem },
+  TContext
+> => {
+  const mutationKey = ["createPoem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPoem>>,
+    { data: CreatePoem }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createPoem(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePoemMutationResult = NonNullable<Awaited<ReturnType<typeof createPoem>>>;
+export type CreatePoemMutationBody = CreatePoem;
+export type CreatePoemMutationError = void;
+
+/**
+ * @summary Write a poem
+ */
+export const useCreatePoem = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createPoem>>,
+      TError,
+      { data: CreatePoem },
+      TContext
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createPoem>>,
+  TError,
+  { data: CreatePoem },
+  TContext
+> => {
+  return useMutation(getCreatePoemMutationOptions(options), queryClient);
+};
 export type getPoemResponse200 = {
   data: Poem;
   status: 200;
@@ -323,3 +447,244 @@ export function useGetPoem<TData = Awaited<ReturnType<typeof getPoem>>, TError =
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export type updatePoemResponse200 = {
+  data: StudioPoem;
+  status: 200;
+};
+
+export type updatePoemResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type updatePoemResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type updatePoemResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type updatePoemResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type updatePoemResponseSuccess = updatePoemResponse200 & {
+  headers: Headers;
+};
+export type updatePoemResponseError = (
+  updatePoemResponse400 | updatePoemResponse401 | updatePoemResponse403 | updatePoemResponse404
+) & {
+  headers: Headers;
+};
+
+export type updatePoemResponse = updatePoemResponseSuccess | updatePoemResponseError;
+
+export const getUpdatePoemUrl = (id: string) => {
+  return `/poems/${id}`;
+};
+
+/**
+ * Changes only the fields present in the body; at least one is required. An author may change their own poems, an editor anybody's.
+ *
+ * The slug is not writable and does not follow the title: a poem's address is settled when it is created, because a link somebody has shared is a promise. Neither are the author, the read count, or the publication date — the last of which is stamped by the server the first time the poem is published, and kept if it is taken down and put back.
+ *
+ * `status: PUBLISHED` and `featured` are both editors' decisions and a 403 otherwise. `status: DRAFT` on a published poem takes it down, which is the reversible act that has to happen before it can be deleted.
+ *
+ * `tags` replaces the whole set rather than adding to it, so `[]` files the poem under nothing and omitting the field leaves its themes alone.
+ * @summary Change a poem
+ */
+export const updatePoem = async (
+  id: string,
+  updatePoem: UpdatePoem,
+  options?: Parameters<typeof request>[1],
+): Promise<updatePoemResponse> => {
+  return request<updatePoemResponse>(getUpdatePoemUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updatePoem),
+  });
+};
+
+export const getUpdatePoemMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePoem>>,
+    TError,
+    { id: string; data: UpdatePoem },
+    TContext
+  >;
+  request?: SecondParameter<typeof request>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePoem>>,
+  TError,
+  { id: string; data: UpdatePoem },
+  TContext
+> => {
+  const mutationKey = ["updatePoem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePoem>>,
+    { id: string; data: UpdatePoem }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePoem(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePoemMutationResult = NonNullable<Awaited<ReturnType<typeof updatePoem>>>;
+export type UpdatePoemMutationBody = UpdatePoem;
+export type UpdatePoemMutationError = void;
+
+/**
+ * @summary Change a poem
+ */
+export const useUpdatePoem = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updatePoem>>,
+      TError,
+      { id: string; data: UpdatePoem },
+      TContext
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updatePoem>>,
+  TError,
+  { id: string; data: UpdatePoem },
+  TContext
+> => {
+  return useMutation(getUpdatePoemMutationOptions(options), queryClient);
+};
+export type deletePoemResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type deletePoemResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type deletePoemResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type deletePoemResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type deletePoemResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type deletePoemResponse409 = {
+  data: void;
+  status: 409;
+};
+
+export type deletePoemResponseSuccess = deletePoemResponse204 & {
+  headers: Headers;
+};
+export type deletePoemResponseError = (
+  | deletePoemResponse400
+  | deletePoemResponse401
+  | deletePoemResponse403
+  | deletePoemResponse404
+  | deletePoemResponse409
+) & {
+  headers: Headers;
+};
+
+export type deletePoemResponse = deletePoemResponseSuccess | deletePoemResponseError;
+
+export const getDeletePoemUrl = (id: string) => {
+  return `/poems/${id}`;
+};
+
+/**
+ * Permanent, and only available for a poem that is not currently public. A published poem is refused with a 409: readers may have its address, so taking it down (`status: DRAFT`) is a separate and reversible decision that has to be made first.
+ *
+ * Deleting takes the poem's themes and its moderation history with it. Deleting a poem that is already gone is a 404, not a no-op.
+ * @summary Delete a poem
+ */
+export const deletePoem = async (
+  id: string,
+  options?: Parameters<typeof request>[1],
+): Promise<deletePoemResponse> => {
+  return request<deletePoemResponse>(getDeletePoemUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeletePoemMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePoem>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof request>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePoem>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deletePoem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePoem>>, { id: string }> = (
+    props,
+  ) => {
+    const { id } = props ?? {};
+
+    return deletePoem(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePoemMutationResult = NonNullable<Awaited<ReturnType<typeof deletePoem>>>;
+
+export type DeletePoemMutationError = void;
+
+/**
+ * @summary Delete a poem
+ */
+export const useDeletePoem = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deletePoem>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<Awaited<ReturnType<typeof deletePoem>>, TError, { id: string }, TContext> => {
+  return useMutation(getDeletePoemMutationOptions(options), queryClient);
+};

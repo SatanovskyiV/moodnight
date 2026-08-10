@@ -1,5 +1,6 @@
 import { applyDecorators } from "@nestjs/common";
 import {
+  createPoemSchema,
   createUserSchema,
   healthSchema,
   type ListDefinition,
@@ -11,6 +12,8 @@ import {
   poemTagSchema,
   registerSchema,
   sessionSchema,
+  studioPoemSchema,
+  updatePoemSchema,
   updateUserSchema,
   userPageSchema,
   userSchema,
@@ -60,6 +63,13 @@ const openApiSchemas = {
   Poem: poemSchema,
   PoemSummary: poemSummarySchema,
   PoemPage: poemPageSchema,
+  // The write path, and a third shape for the same model — which the document
+  // should say plainly rather than leave a client to discover. `StudioPoem`
+  // carries `status` and a nullable `publishedAt` because that is what a poem
+  // looks like before it is public, and `Poem` above cannot describe a draft.
+  StudioPoem: studioPoemSchema,
+  CreatePoem: createPoemSchema,
+  UpdatePoem: updatePoemSchema,
 } satisfies Record<string, z.ZodType>;
 
 export type OpenApiSchemaName = keyof typeof openApiSchemas;
