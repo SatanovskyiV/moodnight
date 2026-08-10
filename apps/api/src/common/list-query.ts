@@ -37,6 +37,42 @@ export interface PrismaListArgs<Where, OrderBy> {
 }
 
 /**
+ * What a relation filter means in SQL — the server half of a `related` entry on
+ * a list definition.
+ *
+ * `?tag=melankholiia&tag=sakralne` arrives here as the two slugs, and this
+ * returns the fragment that narrows to poems carrying one of them. The values
+ * are strings because @moodnight/shared only accepts string-valued relation
+ * filters; the note on `defineList`'s `related` says why.
+ */
+export type RelationFilter<Where> = (chosen: readonly string[]) => Where;
+
+export interface ListArgsOptions<Where> {
+  /**
+   * A constraint the *server* imposes, which no query parameter can lift.
+   *
+   * This is what makes a public list safe to expose over the same machinery an
+   * administrative one uses: `GET /poems` passes `{ status: "PUBLISHED" }`, and
+   * because it is AND-ed with whatever the client asked for, a request can only
+   * ever narrow the set further. There is no parameter that widens it, and no
+   * ordering of filters that escapes it — the alternative, remembering to merge
+   * a status check into each service method, is the kind of thing that holds
+   * until the day somebody adds a sixth endpoint.
+   */
+  base?: Where;
+  /**
+   * One entry per name in the definition's `related`, keyed the same way.
+   *
+   * Every declared relation must appear: {@link listArgs} throws otherwise,
+   * because a filter the schema advertises and the query ignores would answer
+   * `?tag=anything` with the unfiltered table. That is the same silent
+   * falsehood strict parsing exists to prevent, and it deserves the same
+   * refusal rather than a page of wrong rows.
+   */
+  relations?: Record<string, RelationFilter<Where>>;
+}
+
+/**
  * ```ts
  * const { where, orderBy, skip, take } = listArgs<
  *   Prisma.UserWhereInput,
@@ -55,8 +91,20 @@ export interface PrismaListArgs<Where, OrderBy> {
 export function listArgs<Where, OrderBy>(
   definition: ListDefinition,
   query: ListQueryValues,
+  options: ListArgsOptions<Where> = {},
 ): PrismaListArgs<Where, OrderBy> {
   const where: Record<string, unknown> = {};
+
+  // Everything that cannot be a plain top-level key, in one conjunction: the
+  // server's base constraint, the search terms, and the relation filters. They
+  // share this array rather than each claiming a property because two of them
+  // can name the same relation — `?tag=` and a base clause about tags would
+  // collide on one `tags` key and the second would silently replace the first.
+  const and: unknown[] = [];
+
+  if (options.base !== undefined) {
+    and.push(options.base);
+  }
 
   // The filter values live under keys only the definition knows the names of,
   // which is precisely what `ListQueryValues` cannot describe. Reading them
@@ -73,23 +121,73 @@ export function listArgs<Where, OrderBy>(
   // the answer when one of them is not.
   const terms = query.search?.split(/\s+/).filter(Boolean) ?? [];
 
-  if (terms.length > 0) {
-    where.AND = terms.map((term) => ({
+  for (const term of terms) {
+    and.push({
       OR: definition.searchable.map((field) => ({
         [field]: { contains: term, mode: "insensitive" },
       })),
-    }));
+    });
   }
 
   for (const field of definition.filterable) {
     const chosen = values[field];
 
-    if (chosen !== undefined) {
-      // Always `in`, even for a single value: Postgres plans `IN (x)` exactly
-      // as it plans `= x`, and one shape means one thing to read and one thing
-      // to assert against.
-      where[field] = { in: chosen };
+    if (chosen === undefined) {
+      continue;
     }
+
+    if (definition.booleanFilters.includes(field)) {
+      /**
+       * Booleans are the one type that cannot be filtered with a set. Prisma's
+       * `BoolFilter` has no `in` — only `equals` and `not` — and sending one
+       * anyway is a `PrismaClientValidationError`, which reaches the client as
+       * a 500 rather than as anything it could act on.
+       *
+       * A repeated boolean parameter is not an error, though: `?featured=true&
+       * featured=false` names both values a NOT NULL column can hold, so it
+       * constrains nothing and the right translation is no clause at all. Only
+       * a filter that actually narrows becomes SQL.
+       */
+      const distinct = [...new Set(chosen as unknown[])];
+
+      if (distinct.length === 1) {
+        where[field] = { equals: distinct[0] };
+      }
+
+      continue;
+    }
+
+    // `in` for everything else, even a single value: Postgres plans `IN (x)`
+    // exactly as it plans `= x`, and one shape means one thing to read and one
+    // thing to assert against.
+    where[field] = { in: chosen };
+  }
+
+  for (const name of definition.related) {
+    const toFragment = options.relations?.[name];
+
+    // Checked whether or not this request used the filter. The mistake being
+    // caught is a miswiring, not a bad request, so it should surface on the
+    // first call to the endpoint rather than on the first call that happens to
+    // pass `?tag=`.
+    if (!toFragment) {
+      throw new Error(
+        `The list declares a relation filter "${name}" but no mapping for it was supplied. ` +
+          "Add one to the `relations` option, or the parameter would be accepted and ignored.",
+      );
+    }
+
+    const chosen = values[name];
+
+    if (chosen !== undefined) {
+      and.push(toFragment(chosen as readonly string[]));
+    }
+  }
+
+  // Left off entirely when there is nothing to conjoin, so an unfiltered list
+  // still hands Prisma the `{}` it handed before any of this existed.
+  if (and.length > 0) {
+    where.AND = and;
   }
 
   const orderBy: Record<string, unknown>[] = [{ [query.sort]: query.order }];

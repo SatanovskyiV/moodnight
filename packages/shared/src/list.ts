@@ -113,11 +113,31 @@ function emptyAsAbsent<Schema extends z.ZodType>(schema: Schema) {
  * absent filter rather than an empty list that would match no rows at all.
  */
 function filterParam<Value extends z.ZodType>(value: Value) {
+  const booleans = value instanceof z.ZodBoolean;
+
   return z.preprocess((raw) => {
     const chosen = (Array.isArray(raw) ? raw : [raw]).filter((one) => !isBlank(one));
 
-    return chosen.length > 0 ? chosen : undefined;
+    return chosen.length > 0 ? (booleans ? chosen.map(asBoolean) : chosen) : undefined;
   }, z.array(value).min(1).optional());
+}
+
+/**
+ * `"true"` and `"false"` as the booleans they name.
+ *
+ * A query string has only strings in it, so a boolean filter needs converting
+ * before its schema sees it — and `z.coerce.boolean()` is precisely the wrong
+ * tool: it applies JavaScript truthiness, under which the string `"false"` is
+ * `true`. A filter that quietly inverts itself is worse than one that does not
+ * exist, so anything other than the two words is passed through untouched for
+ * `z.boolean()` to reject with a 400 naming the parameter.
+ */
+function asBoolean(raw: unknown): unknown {
+  if (raw === "true") {
+    return true;
+  }
+
+  return raw === "false" ? false : raw;
 }
 
 /**
@@ -183,6 +203,23 @@ export interface ListDefinition {
   readonly searchable: readonly string[];
   readonly sortable: readonly string[];
   readonly filterable: readonly string[];
+  /**
+   * Which of `filterable` hold booleans.
+   *
+   * Named separately because booleans are the one type that cannot be filtered
+   * with a set. Every other column takes `IN (…)`, and a boolean does not —
+   * Prisma's `BoolFilter` offers only `equals` and `not`, since "true or false"
+   * over a NOT NULL column is a tautology rather than a filter. `listArgs` reads
+   * this to pick the operator instead of inspecting the runtime type of a value.
+   */
+  readonly booleanFilters: readonly string[];
+  /**
+   * Filters that address a *related* row rather than a column of this one —
+   * `?tag=melankholiia`. Named here only; what each one means in SQL is the
+   * server's half, supplied to `listArgs` in apps/api, because a Prisma `where`
+   * fragment is not something this package is allowed to know about.
+   */
+  readonly related: readonly string[];
   readonly query: z.ZodType;
   readonly page: z.ZodType;
 }
@@ -235,6 +272,7 @@ export function defineList<
   const Searchable extends readonly (keyof Item["shape"] & string)[],
   const Sortable extends readonly (keyof Item["shape"] & string)[],
   const Filterable extends readonly (keyof Item["shape"] & string)[],
+  const Related extends Record<string, z.ZodType<string>> = Record<never, never>,
 >(config: {
   /** The schema of one row. Field names below are checked against it. */
   item: Item;
@@ -244,11 +282,30 @@ export function defineList<
   sortable: Sortable;
   /** Each becomes a query parameter of its own name, taking its own values. */
   filterable: Filterable;
+  /**
+   * Filters that narrow by a *related* row: `?tag=` and `?author=` on the poem
+   * list, neither of which is a column on a poem.
+   *
+   * Unlike `filterable`, these are not checked against `item` — the whole point
+   * is that they address something the row only points at — so each names its
+   * own value schema. That schema must produce a **string**, because a relation
+   * filter identifies rows by a natural key and on this site those are slugs.
+   * The day one needs to take a number is the day this constraint is widened,
+   * deliberately, rather than by an accident of inference.
+   *
+   * A relation filter is only half a definition: the other half is the Prisma
+   * fragment it becomes, which lives beside `listArgs` in apps/api because
+   * nothing in this package may import Prisma. `listArgs` refuses at runtime to
+   * run a query whose definition declares a relation the caller did not map —
+   * an unapplied filter would answer `?tag=whatever` with every row, which is
+   * the same silent falsehood strict parsing exists to prevent.
+   */
+  related?: Related;
   /** Applied when the client does not choose. Must be one of `sortable`. */
   defaultSort: Sortable[number];
   defaultOrder: SortOrder;
 }) {
-  const { item, searchable, sortable, filterable, defaultSort, defaultOrder } = config;
+  const { item, searchable, sortable, filterable, related, defaultSort, defaultOrder } = config;
 
   if (sortable.length === 0) {
     throw new Error("A list needs at least one sortable property to order its pages by.");
@@ -264,7 +321,10 @@ export function defineList<
     throw new Error("A list needs at least one searchable property, or `search` would do nothing.");
   }
 
-  for (const field of filterable) {
+  const relations: Record<string, z.ZodType<string>> = related ?? {};
+  const relatedNames = Object.keys(relations);
+
+  for (const field of [...filterable, ...relatedNames]) {
     if (RESERVED_PARAMS.includes(field)) {
       throw new Error(
         `A list cannot filter on "${field}": that is one of the framework's own query ` +
@@ -272,6 +332,27 @@ export function defineList<
       );
     }
   }
+
+  // The two kinds of filter share one namespace with each other as well as with
+  // the paging controls, and a collision here is quieter than a reserved-word
+  // one: both would build a parameter of the same name, the second would win in
+  // the object literal, and the list would answer as though the first had never
+  // been declared.
+  for (const name of relatedNames) {
+    if (filterable.includes(name)) {
+      throw new Error(
+        `A list cannot declare "${name}" as both a property filter and a relation filter: ` +
+          "they would be the same query parameter.",
+      );
+    }
+  }
+
+  // Same cast, and the same reason, as `filterFields` below: the keys are built
+  // from data, and only a human can say the pipe `filterParam` returns behaves
+  // as the optional this claims.
+  const relatedFields = Object.fromEntries(
+    Object.entries(relations).map(([name, value]) => [name, filterParam(value)]),
+  ) as unknown as { [Name in keyof Related & string]: z.ZodOptional<z.ZodType<string[], unknown>> };
 
   const filterFields = Object.fromEntries(
     filterable.map((field) => [field, filterParam(item.shape[field])]),
@@ -321,6 +402,7 @@ export function defineList<
       ),
       order: emptyAsAbsent(sortOrderSchema.default(defaultOrder)),
       ...filterFields,
+      ...relatedFields,
     })
     // Strict, for the same reason the write schemas are: `?nmae=Леся` is a
     // request that would otherwise come back looking like a successful search
@@ -332,6 +414,11 @@ export function defineList<
     searchable,
     sortable,
     filterable,
+    booleanFilters: filterable.filter((field) => item.shape[field] instanceof z.ZodBoolean),
+    // Widened to `string[]` by `Object.keys`, which is all any consumer needs:
+    // `listArgs` looks each name up in the map the server supplies, and the
+    // OpenAPI document reads the parameters off `query` rather than from here.
+    related: relatedNames,
     query,
     page: pageSchema(item),
   } as const;

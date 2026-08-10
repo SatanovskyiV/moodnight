@@ -78,6 +78,38 @@ model User {
   name    String @db.VarChar(100)
   surname String @db.VarChar(100)
 
+  /// The name a reader sees on a poem — "Орися Вечірня" — which is not the
+  /// account's legal name and is not required to resemble it. Backfilled from
+  /// `name surname` for accounts that predate the column, so nothing renders
+  /// blank; an author changes it the moment they care.
+  penName String @map("pen_name") @db.VarChar(100)
+
+  /// The author's address on the public site: `/author/orysia-vechirnia`.
+  ///
+  /// Derived from `penName` by `slugify` in @moodnight/shared and then owned by
+  /// the row — renaming a pen name deliberately does *not* move the slug, since
+  /// a URL that has been shared is a promise. Unique, because it addresses one
+  /// author and the database is what makes that true under concurrent writes.
+  slug String @unique @db.VarChar(120)
+
+  /// Up to two Cyrillic letters for the avatar disc on a poem card. Stored
+  /// rather than derived on read: it is a display choice an author may want to
+  /// override, and "ОВ" is two characters against a join's worth of work.
+  initials String @db.VarChar(8)
+
+  /// The decorative title under the name — "Хранитель слова", "Мандрівний
+  /// поет". Pure display, never read by a guard: `role` above is the
+  /// permission, and conflating the two is the mistake this comment exists to
+  /// prevent. Nullable because an account has no title until somebody gives it
+  /// one.
+  roleTitle String? @map("role_title") @db.VarChar(100)
+
+  bio String? @db.VarChar(2000)
+
+  /// An R2 object URL once Phase 6 exists. Until then every avatar is the
+  /// initials disc, which is why this is nullable and nothing sets it.
+  avatarUrl String? @map("avatar_url") @db.VarChar(500)
+
   /// Argon2id, in PHC string form — which encodes the parameters it was
   /// computed with, so raising the cost settings in apps/api later does not
   /// invalidate the hashes already written here. 255 characters is far more
@@ -109,7 +141,187 @@ model User {
   /// changed by hand in psql will not move this.
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  poems   Poem[]
+  reviews Review[]
+
   @@map("users")
+}
+
+/// Where a poem is on its way from a draft to a published page.
+///
+/// The transitions between these belong to Phase 4 and are not enforced by the
+/// database — an enum cannot express "PUBLISHED may not go back to DRAFT". What
+/// the enum does guarantee is that the column holds nothing else, which is what
+/// makes `status: PUBLISHED` safe to use as the public read path's one filter.
+enum PoemStatus {
+  /// The author's, and nobody else's. Never leaves the studio.
+  DRAFT
+
+  /// Submitted, waiting for an editor. Visible in `/admin/queue`.
+  PENDING_REVIEW
+
+  /// Public. The only status `GET /poems` will answer with.
+  PUBLISHED
+
+  /// An editor said no, with a note on the `Review` row. Back to the author.
+  REJECTED
+
+  @@map("poem_status")
+}
+
+model Poem {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// The poem's address: `/poem/tin-nad-polem`. Transliterated from the title
+  /// by `slugify` in @moodnight/shared and unique across the site.
+  ///
+  /// Two poems may honestly share a title, so the application disambiguates
+  /// with a suffix before inserting; this index is what makes that check
+  /// meaningful rather than a race between two writers submitting at once.
+  slug String @unique @db.VarChar(200)
+
+  title String @db.VarChar(200)
+
+  /// The line under the title — "із циклу «Спалені листи»", "балада". Optional,
+  /// because most poems do not have one.
+  subtitle String? @db.VarChar(200)
+
+  /// The poem itself, newline-separated, as the author typed it. `Text` rather
+  /// than a bounded VarChar: a long poem is a normal thing and Postgres stores
+  /// both identically anyway.
+  ///
+  /// Line breaks are the content here, not formatting — which is why this is
+  /// plain text and not HTML or Markdown. Nothing renders it as anything but
+  /// preformatted lines, so there is no injection surface to sanitise.
+  body String @db.Text
+
+  authorId String @map("author_id") @db.Uuid
+  /// `Restrict`, and deliberately not `Cascade`: deleting an account must not
+  /// silently delete the poems it published. This is the decision the note on
+  /// `UsersService.remove` has been deferring — a delete now fails while the
+  /// author has poems, and reassigning or archiving them first is a choice
+  /// somebody makes on purpose rather than a side effect they discover later.
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  status PoemStatus @default(DRAFT)
+
+  /// When the poem became public. Null until it does — which makes it, and not
+  /// `createdAt`, the column the public feed orders by: a poem written in March
+  /// and approved in August belongs at August's end of the feed.
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+
+  /// Whether an editor has put this poem on the front page — the manual
+  /// override over the home page's otherwise automatic sections.
+  ///
+  /// A plain boolean and not a `featuredAt` timestamp, which was the first
+  /// design: the only questions the site asks are "which poems are featured"
+  /// and "newest of them first", and `published_at` already answers the second.
+  /// A timestamp would have bought a history nothing reads, at the price of a
+  /// filter the list framework cannot express — `?featured=true` against a
+  /// nullable date is a presence test, and a column of its own value is not.
+  featured Boolean @default(false)
+
+  /// A denormalised counter, incremented on read — never a `COUNT(*)` over a
+  /// views table. The roadmap names this explicitly, and the reason is the cost
+  /// model: this number is rendered on every card in the feed, and a join that
+  /// aggregates rows per poem would be the most expensive thing on the busiest
+  /// query the site has.
+  readCount Int @default(0) @map("read_count")
+
+  tags PoemTag[]
+
+  reviews Review[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  /// The feed's own query: published poems, newest first. A composite index in
+  /// the order the planner reads it — equality column first, then the one being
+  /// sorted — so the front page is an index scan rather than a sort over every
+  /// poem the site has ever held.
+  @@index([status, publishedAt(sort: Desc)])
+  /// `/author/[slug]`, which is the same page narrowed by one more column.
+  @@index([authorId, status, publishedAt(sort: Desc)])
+  @@map("poems")
+}
+
+/// A theme a poem belongs to — "Меланхолія", "Сакральне". Curated rather than
+/// free-form: tags are how the feed is browsed, and a table of near-duplicates
+/// typed by five different people is how that stops working.
+model Tag {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// The displayed Ukrainian name, unique so the same theme cannot exist twice
+  /// under two spellings of the same word.
+  name String @unique @db.VarChar(60)
+
+  /// `/tag/melankholiia`. Transliterated, and unique for the same reason the
+  /// poem's is.
+  slug String @unique @db.VarChar(80)
+
+  poems PoemTag[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("tags")
+}
+
+/// The join between the two. An explicit model rather than Prisma's implicit
+/// many-to-many, which is the same choice the rest of this schema makes about
+/// being able to read the table in psql: an implicit relation creates a
+/// `_PoemToTag` table with `A` and `B` columns, and no migration or index on it
+/// is ever written by hand again.
+model PoemTag {
+  poemId String @map("poem_id") @db.Uuid
+  poem   Poem   @relation(fields: [poemId], references: [id], onDelete: Cascade)
+
+  tagId String @map("tag_id") @db.Uuid
+  /// `Restrict`: removing a tag that poems still carry should fail rather than
+  /// quietly unfile them. Unlike the poem side, where a deleted poem genuinely
+  /// has no tags left to keep.
+  tag   Tag    @relation(fields: [tagId], references: [id], onDelete: Restrict)
+
+  @@id([poemId, tagId])
+  /// The reverse direction, for `/tag/[slug]` — the primary key already serves
+  /// "which tags does this poem have", and this serves "which poems carry this
+  /// tag", which is the one a reader actually asks for.
+  @@index([tagId])
+  @@map("poem_tags")
+}
+
+/// One moderation decision, kept as an audit trail rather than folded into the
+/// poem's status. The status says where a poem is now; these say who moved it
+/// there and why, which is what a rejected author is owed.
+///
+/// Phase 4 is what writes these — the model is here because `Poem` and `User`
+/// both point at it and adding it later would mean a second migration touching
+/// both tables.
+model Review {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  poemId String @map("poem_id") @db.Uuid
+  poem   Poem   @relation(fields: [poemId], references: [id], onDelete: Cascade)
+
+  reviewerId String @map("reviewer_id") @db.Uuid
+  reviewer   User   @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  action ReviewAction
+
+  /// Why. Required for a rejection in the application, optional in the column —
+  /// an approval rarely needs words.
+  note String? @db.VarChar(2000)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([poemId, createdAt(sort: Desc)])
+  @@map("reviews")
+}
+
+enum ReviewAction {
+  APPROVE
+  REJECT
+
+  @@map("review_action")
 }
 
 // "At most one ROOT" is enforced by a partial unique index —

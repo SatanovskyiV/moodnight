@@ -479,6 +479,168 @@
         "summary": "The signed-in account",
         "tags": ["auth"]
       }
+    },
+    "/poems": {
+      "get": {
+        "description": "One page of published poems, newest first unless asked otherwise. Public — no token required, and drafts are unreachable through it.\n\nEach poem arrives with a teaser rather than its body: the first few lines, plus `truncated` saying whether there is more. The whole text is `GET /poems/{slug}`.\n\n`search` matches title and subtitle, case-insensitively, and every whitespace-separated term has to match one of them. Searching *inside* poems is deliberately not offered here — that is Postgres full-text, and it arrives beside this rather than inside it.\n\n`tag` and `author` take slugs and may each be repeated, which reads as 'any of these' — `?tag=sakralne&tag=balady` is both themes, not their intersection. `featured=true` narrows to what an editor has put on the front page.\n\nEvery parameter is optional and an empty one is read as absent. An unrecognised parameter is a 400 rather than something ignored.",
+        "operationId": "listPoems",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Which page to return, counting from 1.",
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "perPage",
+            "required": false,
+            "in": "query",
+            "description": "How many rows to return. At most 100.",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Matched against title, subtitle, case-insensitively. Whitespace separates terms and every term has to match one of them.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Which property to order by.",
+            "schema": {
+              "default": "publishedAt",
+              "type": "string",
+              "enum": ["publishedAt", "readCount", "title"]
+            }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Which direction to sort in.",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": ["asc", "desc"],
+              "example": "asc"
+            }
+          },
+          {
+            "name": "featured",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "boolean",
+                "description": "Whether an editor has put it on the front page.",
+                "example": false
+              }
+            }
+          },
+          {
+            "name": "tag",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 80,
+                "description": "A tag's slug. Repeatable.",
+                "example": "sakralne"
+              }
+            }
+          },
+          {
+            "name": "author",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "An author's slug. Repeatable.",
+                "example": "orysia-vechirnia"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of poems.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoemPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The query does not match the schema."
+          }
+        },
+        "summary": "List published poems",
+        "tags": ["poems"]
+      }
+    },
+    "/poems/{slug}": {
+      "get": {
+        "description": "One published poem by slug, with its full text. A draft, a poem waiting in the queue and a slug nobody has used are all the same 404 — telling a stranger which of the three it was would confirm the poem exists.",
+        "operationId": "getPoem",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "description": "The poem's slug.",
+            "schema": {
+              "example": "tin-nad-polem",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The poem.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Poem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published poem has that slug."
+          }
+        },
+        "summary": "Get a poem",
+        "tags": ["poems"]
+      }
     }
   },
   "info": {
@@ -768,6 +930,260 @@
         "required": ["items", "total", "page", "perPage", "pageCount"],
         "additionalProperties": false,
         "description": "A page of users, and how many match in total."
+      },
+      "PoemAuthor": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "The author's address on the site.",
+            "example": "orysia-vechirnia"
+          },
+          "penName": {
+            "type": "string",
+            "description": "The name shown to readers.",
+            "example": "Орися Вечірня"
+          },
+          "initials": {
+            "type": "string",
+            "description": "Up to two letters, for the avatar.",
+            "example": "ОВ"
+          },
+          "roleTitle": {
+            "nullable": true,
+            "description": "A decorative title, not a permission. Null if the author has none.",
+            "example": "Хранитель слова",
+            "type": "string"
+          },
+          "avatarUrl": {
+            "nullable": true,
+            "description": "Null until Phase 6 gives avatars somewhere to live.",
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": ["slug", "penName", "initials", "roleTitle", "avatarUrl"],
+        "additionalProperties": false,
+        "description": "A poem's author, as readers see them."
+      },
+      "PoemTag": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The displayed Ukrainian name.",
+            "example": "Меланхолія"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Its address.",
+            "example": "melankholiia"
+          }
+        },
+        "required": ["name", "slug"],
+        "additionalProperties": false,
+        "description": "A theme a poem is filed under."
+      },
+      "Poem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "UUIDv7 — time-ordered, so it sorts by creation."
+          },
+          "slug": {
+            "type": "string",
+            "description": "The poem's address.",
+            "example": "tin-nad-polem"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Тінь над полем"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": "The line under the title, if any.",
+            "example": "із циклу «Спалені листи»",
+            "type": "string",
+            "maxLength": 200
+          },
+          "author": {
+            "$ref": "#/components/schemas/PoemAuthor"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoemTag"
+            },
+            "description": "Themes, possibly none."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When the poem became public."
+          },
+          "readCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How many times it has been opened.",
+            "example": 1247
+          },
+          "featured": {
+            "type": "boolean",
+            "description": "Whether an editor has put it on the front page.",
+            "example": false
+          },
+          "body": {
+            "type": "string",
+            "description": "The poem, newline-separated, as its author typed it. Plain text — the line breaks are content, so a client renders them and does not reflow them."
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "subtitle",
+          "author",
+          "tags",
+          "publishedAt",
+          "readCount",
+          "featured",
+          "body"
+        ],
+        "additionalProperties": false,
+        "description": "A poem in full."
+      },
+      "PoemSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "UUIDv7 — time-ordered, so it sorts by creation."
+          },
+          "slug": {
+            "type": "string",
+            "description": "The poem's address.",
+            "example": "tin-nad-polem"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Тінь над полем"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": "The line under the title, if any.",
+            "example": "із циклу «Спалені листи»",
+            "type": "string",
+            "maxLength": 200
+          },
+          "author": {
+            "$ref": "#/components/schemas/PoemAuthor"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoemTag"
+            },
+            "description": "Themes, possibly none."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When the poem became public."
+          },
+          "readCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How many times it has been opened.",
+            "example": 1247
+          },
+          "featured": {
+            "type": "boolean",
+            "description": "Whether an editor has put it on the front page.",
+            "example": false
+          },
+          "teaser": {
+            "type": "string",
+            "description": "The first 6 lines, newline-separated."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Whether the poem is longer than the teaser shows.",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "subtitle",
+          "author",
+          "tags",
+          "publishedAt",
+          "readCount",
+          "featured",
+          "teaser",
+          "truncated"
+        ],
+        "additionalProperties": false,
+        "description": "A poem as a card in the feed shows it."
+      },
+      "PoemPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoemSummary"
+            },
+            "description": "The rows on this page."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How many rows match the search and filters, across all pages.",
+            "example": 137
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "description": "Which page this is, counting from 1.",
+            "example": 1
+          },
+          "perPage": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "description": "How many rows a full page holds.",
+            "example": 20
+          },
+          "pageCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "How many pages `total` divides into. 0 when nothing matches.",
+            "example": 7
+          }
+        },
+        "required": ["items", "total", "page", "perPage", "pageCount"],
+        "additionalProperties": false,
+        "description": "A page of poems, and how many match in total."
       }
     }
   }

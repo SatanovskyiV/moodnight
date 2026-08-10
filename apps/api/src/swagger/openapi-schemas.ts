@@ -4,6 +4,11 @@ import {
   healthSchema,
   type ListDefinition,
   loginSchema,
+  poemAuthorSchema,
+  poemPageSchema,
+  poemSchema,
+  poemSummarySchema,
+  poemTagSchema,
   registerSchema,
   sessionSchema,
   updateUserSchema,
@@ -42,6 +47,19 @@ const openApiSchemas = {
   // The same, for the paged envelope every list endpoint answers with. Only the
   // envelope is named per resource; what a page *of* looks like is `User`.
   UserPage: userPageSchema,
+  // The public read path. `PoemAuthor` and `PoemTag` are registered in their own
+  // right rather than left to be inlined: both are nested by two of the three
+  // shapes below, and naming them here is what makes the generated client
+  // produce one `PoemAuthor` type instead of two structurally identical
+  // anonymous ones.
+  PoemAuthor: poemAuthorSchema,
+  PoemTag: poemTagSchema,
+  // Two shapes for one model, which the document should say plainly: `Poem` has
+  // the body and comes from `/poems/{slug}`, `PoemSummary` has the teaser and is
+  // what a page of the feed is made of.
+  Poem: poemSchema,
+  PoemSummary: poemSummarySchema,
+  PoemPage: poemPageSchema,
 } satisfies Record<string, z.ZodType>;
 
 export type OpenApiSchemaName = keyof typeof openApiSchemas;

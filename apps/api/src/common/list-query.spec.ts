@@ -86,6 +86,41 @@ describe("the list framework", () => {
         }),
       ).toThrow(/at least one sortable/);
     });
+
+    // A relation filter shares the flat namespace with everything else, so it
+    // can shadow a paging control exactly as a property filter can.
+    it("refuses a relation filter that would shadow one of its own parameters", () => {
+      expect(() =>
+        defineList({
+          item,
+          searchable: ["name"],
+          sortable: ["name"],
+          filterable: [],
+          related: { order: z.string() },
+          defaultSort: "name",
+          defaultOrder: "asc",
+        }),
+      ).toThrow(/cannot filter on "order"/);
+    });
+
+    /**
+     * The quieter collision: both kinds build a parameter of the same name, the
+     * second wins in the object literal, and the list answers as though the
+     * first had never been declared. Nothing throws and nothing looks wrong.
+     */
+    it("refuses a name declared as both a property and a relation filter", () => {
+      expect(() =>
+        defineList({
+          item,
+          searchable: ["name"],
+          sortable: ["name"],
+          filterable: ["name"],
+          related: { name: z.string() },
+          defaultSort: "name",
+          defaultOrder: "asc",
+        }),
+      ).toThrow(/both a property filter and a relation filter/);
+    });
   });
 
   describe("the query a client may send", () => {
@@ -243,6 +278,211 @@ describe("the list framework", () => {
 
       expect(where.role).toEqual({ in: ["ADMIN"] });
       expect(where.AND).toHaveLength(1);
+    });
+  });
+
+  /**
+   * A boolean filter is the one kind whose value cannot survive a query string
+   * untouched, because a query string has only strings in it.
+   *
+   * The trap being avoided is `z.coerce.boolean()`, under which the string
+   * `"false"` is truthy and `?featured=false` silently means the opposite of
+   * what it says. A filter that inverts itself is worse than one that does not
+   * exist, so the two words are converted by name and anything else is refused.
+   */
+  describe("a boolean filter", () => {
+    const flagged = defineList({
+      item: z.object({ id: z.string(), name: z.string(), featured: z.boolean() }),
+      searchable: ["name"],
+      sortable: ["name"],
+      filterable: ["featured"],
+      defaultSort: "name",
+      defaultOrder: "asc",
+    });
+
+    const flaggedArgs = (query: Record<string, unknown>) =>
+      listArgs<{ featured?: Record<string, unknown> }, OrderBy>(
+        flagged,
+        flagged.query.parse(query),
+      );
+
+    it('reads "true" and "false" as the booleans they name', () => {
+      expect(flaggedArgs({ featured: "true" }).where).toEqual({ featured: { equals: true } });
+      expect(flaggedArgs({ featured: "false" }).where).toEqual({ featured: { equals: false } });
+    });
+
+    // The whole point. Truthiness would make this `true` and the filter a lie.
+    it('does not read "false" as true', () => {
+      expect(flaggedArgs({ featured: "false" }).where).not.toEqual({ featured: { equals: true } });
+    });
+
+    /**
+     * `equals` and not `in`, which is not a stylistic choice: Prisma's
+     * `BoolFilter` offers only `equals` and `not`, so an `in` is a
+     * `PrismaClientValidationError` that reaches the client as a 500.
+     *
+     * This shipped once. The endpoint's own spec agreed with the wrong shape
+     * because the database is mocked, and only a real query found it — which is
+     * why the poems spec now routes its expectations through Prisma's own
+     * `PoemWhereInput` type.
+     */
+    it("never builds an `in` for a boolean, which Prisma would refuse", () => {
+      expect(flagged.booleanFilters).toEqual(["featured"]);
+      expect(flaggedArgs({ featured: "true" }).where.featured).not.toHaveProperty("in");
+    });
+
+    /**
+     * Both values of a NOT NULL boolean is every row, so it narrows nothing and
+     * becomes no clause. The alternative reading — a set holding both — is
+     * exactly the shape there is no operator for.
+     */
+    it("drops a boolean filter that names both values", () => {
+      expect(flaggedArgs({ featured: ["true", "false"] }).where).toEqual({});
+    });
+
+    it("refuses a word that is neither", () => {
+      expect(() => flagged.query.parse({ featured: "yes" })).toThrow();
+      expect(() => flagged.query.parse({ featured: "1" })).toThrow();
+    });
+
+    it("still reads an empty parameter as an absent one", () => {
+      expect(flaggedArgs({ featured: "" }).where).toEqual({});
+    });
+  });
+
+  /**
+   * The server's own constraint — what makes one list framework serve both an
+   * authenticated administration table and an anonymous public feed.
+   *
+   * Everything here is about the same property: `base` can only ever narrow.
+   * There is no parameter that lifts it and no ordering of filters that escapes
+   * it, because it is conjoined rather than merged into a key a filter could
+   * overwrite.
+   */
+  describe("the base constraint", () => {
+    const baseFor = (query: Record<string, unknown>, base?: Where) =>
+      listArgs<Where, OrderBy>(userList, parse(query), { base });
+
+    it("applies even when the query asks for nothing", () => {
+      expect(baseFor({}, { role: "AUTHOR" }).where).toEqual({ AND: [{ role: "AUTHOR" }] });
+    });
+
+    it("is conjoined with a search rather than replacing it", () => {
+      const { where } = baseFor({ search: "леся" }, { role: "AUTHOR" });
+
+      expect(where.AND).toHaveLength(2);
+      expect(where.AND?.[0]).toEqual({ role: "AUTHOR" });
+    });
+
+    /**
+     * The security case, stated as an assertion.
+     *
+     * A client filtering on the same property the base constrains must not be
+     * able to widen it. Both clauses survive — the base in the conjunction, the
+     * filter as its own key — and Postgres ANDs them, so the answer is the
+     * intersection and never the client's alone.
+     */
+    it("cannot be widened by a filter naming the same property", () => {
+      const { where } = baseFor({ role: "ROOT" }, { role: "AUTHOR" });
+
+      expect(where.AND).toEqual([{ role: "AUTHOR" }]);
+      expect(where.role).toEqual({ in: ["ROOT"] });
+    });
+
+    // Absent by default, so every list that does not ask for one keeps handing
+    // Prisma exactly what it handed before any of this existed.
+    it("leaves the where untouched when there is none", () => {
+      expect(baseFor({}).where).toEqual({});
+    });
+  });
+
+  /**
+   * Filters that address a *related* row — `?tag=`, `?author=` — whose meaning
+   * in SQL is the server's half and cannot live in @moodnight/shared.
+   */
+  describe("relation filters", () => {
+    const withRelations = defineList({
+      item: z.object({ id: z.string(), title: z.string() }),
+      searchable: ["title"],
+      sortable: ["title"],
+      filterable: [],
+      related: { tag: z.string(), author: z.string() },
+      defaultSort: "title",
+      defaultOrder: "asc",
+    });
+
+    /**
+     * Wider than the `Where` the rest of this file uses, because a relation
+     * fragment is a shape the model's own columns do not contain — which is the
+     * whole reason relation filters exist. The index signature is what lets one
+     * type hold both `AND` and an arbitrary nested clause.
+     */
+    type RelatedWhere = { AND?: unknown[]; [clause: string]: unknown };
+
+    const relations = {
+      tag: (slugs: readonly string[]) => ({ tags: { some: { slug: { in: [...slugs] } } } }),
+      author: (slugs: readonly string[]) => ({ author: { slug: { in: [...slugs] } } }),
+    };
+
+    const relatedArgs = (query: Record<string, unknown>) =>
+      listArgs<RelatedWhere, OrderBy>(withRelations, withRelations.query.parse(query), {
+        relations,
+      });
+
+    it("names the declared relations as ordinary query parameters", () => {
+      expect(withRelations.related).toEqual(["tag", "author"]);
+      expect(withRelations.query.parse({ tag: "nich" })).toMatchObject({ tag: ["nich"] });
+    });
+
+    it("turns each into the fragment the server supplied", () => {
+      expect(relatedArgs({ author: "lesia-ukrainka" }).where).toEqual({
+        AND: [{ author: { slug: { in: ["lesia-ukrainka"] } } }],
+      });
+    });
+
+    // Repeated keys read as "any of these" — the reading a reader browsing
+    // themes expects, and the only one that returns anything on a small archive.
+    it("accepts a relation filter several times over", () => {
+      expect(relatedArgs({ tag: ["nich", "sakralne"] }).where).toEqual({
+        AND: [{ tags: { some: { slug: { in: ["nich", "sakralne"] } } } }],
+      });
+    });
+
+    it("conjoins several relations rather than choosing between them", () => {
+      expect(relatedArgs({ tag: "nich", author: "vasyl-stus" }).where.AND).toHaveLength(2);
+    });
+
+    it("adds nothing when the parameter was not sent", () => {
+      expect(relatedArgs({}).where).toEqual({});
+    });
+
+    it("refuses a relation parameter the definition did not declare", () => {
+      expect(() => withRelations.query.parse({ collection: "spaleni-lysty" })).toThrow(
+        /collection/,
+      );
+    });
+
+    /**
+     * A declared relation with no mapping would be a parameter the schema
+     * advertises, accepts, and then ignores — so `?tag=anything` would answer
+     * with the unfiltered table and look like a successful filter. That is the
+     * same silent falsehood strict parsing exists to prevent, and it earns the
+     * same refusal.
+     *
+     * Checked whether or not this request used the filter, because the mistake
+     * is a miswiring rather than a bad request: it should surface on the first
+     * call to the endpoint, not on the first call that happens to pass `?tag=`.
+     */
+    it("refuses to run at all when a declared relation was never mapped", () => {
+      const query = withRelations.query.parse({});
+      const half = { tag: relations.tag };
+
+      expect(() =>
+        listArgs<RelatedWhere, OrderBy>(withRelations, query, { relations: half }),
+      ).toThrow(/author/);
+      expect(() => listArgs<RelatedWhere, OrderBy>(withRelations, query)).toThrow(
+        /relation filter/,
+      );
     });
   });
 

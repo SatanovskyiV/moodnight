@@ -7,6 +7,7 @@ import {
 import { Prisma } from "@moodnight/db";
 import {
   type CreateUserInput,
+  initialsOf,
   type ListUsersQuery,
   type UpdateUserInput,
   type User,
@@ -17,6 +18,7 @@ import {
 
 import { hashPassword } from "../auth/password";
 import { listArgs, toPage } from "../common/list-query";
+import { slugPrefix, uniqueSlug } from "../common/unique-slug";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -63,13 +65,20 @@ const SESSION_FIELDS = {
 const UNIQUE_VIOLATION = "P2002";
 
 /**
- * The partial unique index that allows a single ROOT row (created by the
- * 20260804121000_one_root_account migration). Two unique indexes now guard this
- * table, so a P2002 is no longer self-explanatory: which one Postgres rejected
- * the write on is the difference between "that email is taken" and "there is
- * already a root account", and the client deserves the right one.
+ * The partial unique index that allows a single ROOT row, created by the
+ * 20260804121000_one_root_account migration.
  */
 const ONE_ROOT_INDEX = "users_one_root";
+
+/**
+ * The unique index on the public slug, added by 20260809120000_add_poems.
+ *
+ * `deriveProfile` picks a free slug before inserting, so a violation here means
+ * two requests settled on the same suffix in the same instant — rare, and worth
+ * telling apart from the email one, because "that email is taken" would send an
+ * administrator looking in entirely the wrong place.
+ */
+const SLUG_INDEX = "users_slug_key";
 
 /** Prisma's code for "the row this `update` or `delete` targeted does not exist". */
 const RECORD_NOT_FOUND = "P2025";
@@ -109,7 +118,7 @@ function normaliseEmail(email: string): string {
  * Narrow enough to act on: a Prisma failure, and the specific one expected.
  *
  * A type predicate rather than a plain boolean, so a caller that needs more
- * than the verdict — {@link violatedRootIndex} reads `meta` — gets the narrowed
+ * than the verdict — {@link violatedIndex} reads `meta` — gets the narrowed
  * error out of the same check instead of asserting the type a second time.
  */
 function isPrismaError(
@@ -120,17 +129,22 @@ function isPrismaError(
 }
 
 /**
- * Whether a unique violation came from the single-root index rather than from
- * the email one.
+ * Whether a unique violation came from a particular index.
+ *
+ * Three of them now guard this table, so a P2002 on its own says nothing
+ * useful: which index Postgres rejected the write on is the difference between
+ * "that email is taken", "there is already a root account" and "two accounts
+ * raced for the same slug", and the client deserves the right one.
  *
  * Prisma reports the offending constraint in `meta.target`, and not in one
  * shape: Postgres gives back the index name as a string, other connectors give
  * an array of column names. Both are flattened to a list before the comparison,
  * so this asks "does the target name this index" rather than betting on which
- * form arrives. An unrecognisable target reads as `false`, which lands the
- * caller on the email message — the older and far likelier of the two.
+ * form arrives. An unrecognisable target reads as `false` for every index,
+ * which lands the caller on the email message — the oldest and likeliest of the
+ * three.
  */
-function violatedRootIndex(error: unknown): boolean {
+function violatedIndex(error: unknown, index: string): boolean {
   if (!isPrismaError(error, UNIQUE_VIOLATION)) {
     return false;
   }
@@ -138,7 +152,7 @@ function violatedRootIndex(error: unknown): boolean {
   const target = error.meta?.target;
   const names = Array.isArray(target) ? target.map(String) : [String(target)];
 
-  return names.includes(ONE_ROOT_INDEX);
+  return names.includes(index);
 }
 
 /** One answer to "there is already a root", shared by `create` and `update`. */
@@ -258,11 +272,13 @@ export class UsersService {
 
     const { password, ...fields } = input;
     const email = normaliseEmail(input.email);
+    const profile = await this.deriveProfile(input.name, input.surname);
 
     try {
       const user = await this.prisma.user.create({
         data: {
           ...fields,
+          ...profile,
           email,
           // Spread rather than assigned, so an absent password leaves the key
           // off the insert entirely and the column keeps its NULL — rather than
@@ -274,8 +290,16 @@ export class UsersService {
 
       return toUser(user);
     } catch (error) {
-      if (violatedRootIndex(error)) {
+      if (violatedIndex(error, ONE_ROOT_INDEX)) {
         throw rootTaken();
+      }
+
+      if (violatedIndex(error, SLUG_INDEX)) {
+        throw new ConflictException(
+          `The slug derived from "${profile.penName}" was taken between choosing it and ` +
+            "writing the row. Nothing was created; sending the same request again will pick " +
+            "the next free one.",
+        );
       }
 
       if (isPrismaError(error, UNIQUE_VIOLATION)) {
@@ -322,7 +346,7 @@ export class UsersService {
         throw noSuchUser(id);
       }
 
-      if (violatedRootIndex(error)) {
+      if (violatedIndex(error, ONE_ROOT_INDEX)) {
         throw rootTaken();
       }
 
@@ -407,6 +431,43 @@ export class UsersService {
 
       throw error;
     }
+  }
+
+  /**
+   * The three public-profile columns an account cannot exist without, derived
+   * from the name it was created with.
+   *
+   * None of them is on `createUserSchema`, and that is the scope line rather
+   * than an oversight: an administrator creating an account is not the person
+   * who gets to choose how its owner is credited on a poem. `penName` starts as
+   * the legal name and becomes whatever the author makes it in the studio's
+   * profile editor, which is Phase 4's; until that exists these are simply
+   * sensible starting values.
+   *
+   * The slug is settled here and then frozen for the life of the row — see the
+   * note on the column in schema.prisma. A published URL is a promise, so
+   * renaming a pen name deliberately does not move the address it was first
+   * given.
+   */
+  private async deriveProfile(name: string, surname: string) {
+    const penName = `${name} ${surname}`;
+
+    // One indexed range scan over a handful of rows, rather than a read of the
+    // whole column: `startsWith` on a B-tree prefix is exactly what the unique
+    // index on `slug` already supports.
+    const neighbours = await this.prisma.user.findMany({
+      where: { slug: { startsWith: slugPrefix(penName) } },
+      select: { slug: true },
+    });
+
+    return {
+      penName,
+      initials: initialsOf(penName),
+      slug: uniqueSlug(
+        penName,
+        neighbours.map((one) => one.slug),
+      ),
+    };
   }
 
   /**

@@ -112,6 +112,63 @@ export function sessionRow(overrides: Partial<Omit<CredentialRowFixture, "passwo
   return { id: USER_ID, role: "AUTHOR" as const, tokenVersion: 0, ...overrides };
 }
 
+/** Ids for the poem fixtures, same UUIDv7 shape as the user ones. */
+export const POEM_ID = "0192f5a2-1e4d-7c5f-b061-3c4d5e6f7081";
+
+/** Fixed, so a spec can name the exact ISO string a poem's `publishedAt` becomes. */
+const PUBLISHED_AT = new Date("2026-03-04T05:06:07.000Z");
+
+export interface PoemRowFixture {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  body: string;
+  publishedAt: Date | null;
+  createdAt: Date;
+  readCount: number;
+  featured: boolean;
+  author: {
+    slug: string;
+    penName: string;
+    initials: string;
+    roleTitle: string | null;
+    avatarUrl: string | null;
+  };
+  tags: { tag: { name: string; slug: string } }[];
+}
+
+/**
+ * A poem row exactly as the service selects it — including the join rows on
+ * `tags`, which arrive wrapped and are flattened by the mapper.
+ *
+ * The body is eight lines, which matters: the teaser is cut at six, so this
+ * fixture exercises the truncation rather than sliding under it. A spec that
+ * wants the other case passes a shorter `body`.
+ */
+export function poemRow(overrides: Partial<PoemRowFixture> = {}): PoemRowFixture {
+  return {
+    id: POEM_ID,
+    slug: "tin-nad-polem",
+    title: "Тінь над полем",
+    subtitle: "із циклу «Спалені листи»",
+    body: ["один", "два", "три", "чотири", "п'ять", "шість", "сім", "вісім"].join("\n"),
+    publishedAt: PUBLISHED_AT,
+    createdAt: CREATED_AT,
+    readCount: 1247,
+    featured: false,
+    author: {
+      slug: "taras-shevchenko",
+      penName: "Тарас Шевченко",
+      initials: "ТШ",
+      roleTitle: "Мандрівний поет",
+      avatarUrl: null,
+    },
+    tags: [{ tag: { name: "Меланхолія", slug: "melankholiia" } }],
+    ...overrides,
+  };
+}
+
 /**
  * Only the delegate methods the app actually calls. Adding a query elsewhere
  * means adding it here too, and the failure when it is missing —
@@ -120,7 +177,14 @@ export function sessionRow(overrides: Partial<Omit<CredentialRowFixture, "passwo
 export function createPrismaMock() {
   return {
     user: {
-      findMany: vi.fn(),
+      // Defaulted to an empty result, unlike its siblings, because two very
+      // different callers share it: a list endpoint, which always stubs it, and
+      // `deriveProfile` on the *create* path, which reads the neighbouring
+      // slugs and which no test about creating a user is written to think
+      // about. Returning `undefined` there fails inside the service with a
+      // `.map` on nothing, a long way from anything the test is asserting. A
+      // list spec that forgets to stub it still fails — on an empty page.
+      findMany: vi.fn().mockResolvedValue([]),
       // Paired with `findMany` by every list endpoint: the page and the total
       // are two queries against one `where`, so a spec that stubs one and not
       // the other gets an undefined total rather than a passing test.
@@ -129,6 +193,14 @@ export function createPrismaMock() {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+    },
+    poem: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+      // `findFirst` and not `findUnique`, matching the service: the public
+      // lookup carries the PUBLISHED constraint alongside the slug, which
+      // `findUnique` has no way to accept.
+      findFirst: vi.fn(),
     },
   };
 }

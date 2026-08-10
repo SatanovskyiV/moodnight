@@ -170,9 +170,60 @@ describe("UsersService", () => {
       await service.create(input);
 
       expect(prisma.user.create).toHaveBeenCalledWith({
-        data: { ...input, email: "poet@moodnight.dev" },
+        data: expect.objectContaining({ ...input, email: "poet@moodnight.dev" }),
         select: PUBLIC_FIELDS,
       });
+    });
+
+    /**
+     * The three columns a row cannot exist without and no client may send.
+     *
+     * They are asserted here rather than folded into the case above because
+     * they are a different claim: that one is about the email being lowercased,
+     * this one is about the account arriving with a public identity nobody
+     * asked for. The slug is the interesting one — it is the account's address
+     * for the rest of its life, and it is derived here exactly once.
+     */
+    it("derives the public profile from the name, transliterating the slug", async () => {
+      prisma.user.create.mockResolvedValue(userRow());
+
+      await service.create(input);
+
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            penName: "Леся Українка",
+            initials: "ЛУ",
+            slug: "lesia-ukrainka",
+          }),
+        }),
+      );
+    });
+
+    // The suffix is what keeps two people with the same name from being one
+    // 409. `deriveProfile` reads the slugs already taken under the same prefix
+    // and steps past them; `-2` because the unsuffixed slug is the first.
+    it("steps past a slug somebody already holds", async () => {
+      prisma.user.findMany.mockResolvedValue([{ slug: "lesia-ukrainka" }]);
+      prisma.user.create.mockResolvedValue(userRow());
+
+      await service.create(input);
+
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ slug: "lesia-ukrainka-2" }),
+        }),
+      );
+    });
+
+    // A P2002 naming the slug index is a genuine race — two requests picking
+    // the same suffix — and has to be told apart from the email one, or an
+    // administrator is sent looking for a duplicate address that does not exist.
+    it("answers a slug collision with its own 409, not the email one", async () => {
+      prisma.user.create.mockRejectedValue(prismaError("P2002", "users_slug_key"));
+
+      await expect(service.create(input)).rejects.toMatchObject({ status: 409 });
+      await expect(service.create(input)).rejects.toThrow(/slug/i);
     });
 
     /**
