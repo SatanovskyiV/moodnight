@@ -9,8 +9,9 @@ next-env.d.ts
 .DS_Store
 # Every env file is ignored, and the examples are the only exception. Listing
 # them individually is how a credential eventually gets committed under a name
-# nobody added to this list.
+# nobody added to this list — so the exception is a pattern too, matching
+# .env.example and .env.neon.example alike without either being named.
 .env
 .env.*
-!.env.example
+!.env*.example
 .vercel

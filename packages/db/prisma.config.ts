@@ -25,6 +25,14 @@ import { defineConfig } from "prisma/config";
  */
 const migrationUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
+// Which file those variables came from is decided before this runs. `.env` —
+// the local container — is what dotenv loads above, and it is what every
+// `pnpm db:*` command gets. `pnpm db:prod:status` and `pnpm db:prod:deploy` go
+// through scripts/prod.mjs, which reads `.env.neon` and exports DIRECT_URL into
+// this process first; dotenv leaves already-set variables alone, so the
+// production string wins and nothing here needs to know about the distinction.
+// scripts/target.mjs holds the reasoning for the split.
+
 export default defineConfig({
   schema: path.join("prisma", "schema.prisma"),
 

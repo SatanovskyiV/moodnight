@@ -140,9 +140,11 @@ pnpm dev
 
 `pnpm db:up` returns only once the container reports healthy, so the three lines can be chained without the migration racing the server's startup.
 
-**The connection string** lives in `packages/db/.env` — one file, read by both the Prisma CLI and `apps/api`, so it is never copied per app. The local one is written for you against the container above; copy `packages/db/.env.example` over it to point somewhere else. In production nothing reads a file: Vercel supplies the same variables to the api project.
+**Two environments, two files, and they are not the same file.** `packages/db/.env` is the local one — the container above — and it is loaded automatically by every `pnpm db:*` command, which is exactly why it must never hold a production string. `packages/db/.env.neon` is production, and is read by nothing except the two commands named below. Copy each from its `.example` neighbour.
 
-Two strings there, and they are not interchangeable: **`DATABASE_URL`** is Neon's pooled `-pooler` host, which the application connects through, and **`DIRECT_URL`** is the unpooled one, which migrations use because PgBouncer in transaction mode cannot hold the locks the schema engine takes out. A local Postgres has neither — it needs only `DATABASE_URL`, which `DIRECT_URL` falls back to.
+That separation is load-bearing rather than tidy. Whatever `.env` points at is what `db:migrate`, `db:seed` and `db:reset` act on, so a `.env` aimed at Neon turns `pnpm db:reset` — one line of shell history away from `pnpm db:seed` — into "drop the live database and reseed it with accounts whose password is `moodnight-dev`". So the three destructive scripts check first and **refuse to run against any host that is not localhost**, and the two production scripts announce the host before they touch it. The reasoning lives in [scripts/target.mjs](packages/db/scripts/target.mjs); the check itself is a dependency-free `node` script that runs before Prisma opens a connection.
+
+Two variables, and they are not interchangeable: **`DATABASE_URL`** is Neon's pooled `-pooler` host, which the application connects through, and **`DIRECT_URL`** is the unpooled one, which migrations use because PgBouncer in transaction mode cannot hold the locks the schema engine takes out. A local Postgres has neither — it needs only `DATABASE_URL`, which `DIRECT_URL` falls back to. `.env.neon` holds only `DIRECT_URL`: nothing on a laptop should carry the pooled string, because nothing on a laptop should be serving traffic.
 
 ```bash
 pnpm db:up / db:down          # start / stop the container — data survives both
@@ -151,12 +153,17 @@ pnpm db:migrate               # create + apply a migration from schema changes (
 pnpm db:seed                  # re-run the seed; idempotent, safe any time
 pnpm db:reset                 # wipe, re-apply every migration, re-seed
 pnpm db:generate              # regenerate the client — also runs on install and build
-pnpm db:status                # which migrations the database is missing
+pnpm db:status                # which migrations the local database is missing
 pnpm db:studio                # browse the data
-pnpm db:deploy                # apply pending migrations — production only, never generates
+pnpm db:deploy                # apply pending migrations without generating
+
+pnpm db:prod:status           # …the same two, against Neon. The only commands
+pnpm db:prod:deploy           # in the repo that reach production.
 ```
 
-**No Docker?** `pnpm db exec prisma dev` starts a Postgres the Prisma CLI ships with and prints a `DATABASE_URL` to paste into `packages/db/.env`. A Neon database works the same way. Nothing else in the workflow changes.
+Everything above the blank line goes to the container and cannot be made to go anywhere else. Everything below it goes to Neon and cannot be made to go anywhere else. Note there is no `db:prod:reset` and no `db:prod:seed`, and adding one would be a mistake: [seed.ts](packages/db/src/seed.ts) writes sample accounts with a published password.
+
+**No Docker?** `pnpm db exec prisma dev` starts a Postgres the Prisma CLI ships with and prints a `DATABASE_URL` to paste into `packages/db/.env`. It is still localhost, so nothing else in the workflow changes. A separate Neon branch works as a development database too, but the guard only knows whether a host is local — pointing `.env` at anything remote makes `pnpm db:reset` yours to aim carefully, and it will refuse until you change the rule in [scripts/target.mjs](packages/db/scripts/target.mjs).
 
 **The seed** is [packages/db/src/seed.ts](packages/db/src/seed.ts), every row an `upsert` on a natural key so re-running it is always safe. `prisma migrate reset` runs it automatically, which is what makes `pnpm db:reset` a one-command return to a known state.
 
@@ -231,19 +238,22 @@ Neither project needs a custom build command. Vercel detects Turborepo and build
 
 **Environment variables, api project only.** The deployed function needs exactly one: `DATABASE_URL`, Neon's pooled `-pooler` host. Neon's Vercel integration sets it, along with several aliases the app ignores. The web project must not have it — it never connects, and giving it the credentials only widens what a compromise reaches. Note that `apps/api` refuses to boot without it: a missing `DATABASE_URL` takes `/health` down too, not just the database routes.
 
-`DIRECT_URL` is **not** a deployment variable. Only the Prisma CLI reads it, so it belongs wherever migrations are run from — a developer's machine, or CI — and setting it on Vercel does nothing.
+`DIRECT_URL` is **not** a deployment variable. Only the Prisma CLI reads it, so it belongs wherever migrations are run from — a developer's machine, in `packages/db/.env.neon` — and setting it on Vercel does nothing.
 
 **Migrations are not part of the build.** They are run deliberately, so a schema change lands when someone means it to rather than as a side effect of a preview deploy:
 
 ```bash
-DIRECT_URL="postgresql://…neon.tech/moodnight?sslmode=require" pnpm db:deploy
+pnpm db:prod:status           # what Neon is missing
+pnpm db:prod:deploy           # apply it
 ```
 
-The shell variable wins over `packages/db/.env`, which is why that command reaches Neon rather than the local container without any file being edited.
+Both read `packages/db/.env.neon` and print the host before connecting. No shell prefix, no file edited, and no way to run either against the local container by mistake — nor the other way round, since the destructive scripts refuse any host that is not localhost.
 
-**Order matters.** Apply the migration *before* the deploy that needs it: code expecting a table Neon does not have yet returns 500s until it exists. The reverse — a column added but unused — is harmless, which is the argument for schema changes that are backwards compatible with the running version.
+`db:prod:status` **exits non-zero when migrations are pending**, which is Prisma's design and what lets it gate a deploy. pnpm dresses that up as `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL`; the migration list printed above it is the actual answer, and the script says so.
 
-Do not seed production. [seed.ts](packages/db/src/seed.ts) writes sample users and is meant for a local database.
+**Order matters.** Apply the migration *before* the deploy that needs it: code expecting a column Neon does not have yet returns 500s until it exists — a `P2022`, `The column … does not exist in the current database`, on every request that touches the table. The reverse — a column added but unused — is harmless, which is the argument for schema changes that are backwards compatible with the running version. `pnpm db:prod:status` before a deploy is the cheap way to be sure, and it is the first thing to run when the deployed API starts returning 500s that local development does not.
+
+Nothing seeds production. There is deliberately no script for it: [seed.ts](packages/db/src/seed.ts) writes sample users whose password is in this README, and `pnpm db:seed` refuses to run against anything but localhost.
 
 ## The original prototype
 

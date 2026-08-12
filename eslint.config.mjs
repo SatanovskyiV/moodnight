@@ -22,6 +22,17 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Package scripts: plain ESM run by node straight from package.json, never
+    // bundled, never compiled. They need Node's globals declared, and the three
+    // they actually use are listed rather than pulling in the `globals` package
+    // — a guard script that needs an extra install to lint is one more reason
+    // for someone to delete it.
+    files: ["**/scripts/*.mjs"],
+    languageOptions: {
+      globals: { console: "readonly", process: "readonly", URL: "readonly" },
+    },
+  },
+  {
     rules: {
       "@typescript-eslint/consistent-type-imports": [
         "error",

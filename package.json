@@ -24,7 +24,9 @@
     "db:reset": "pnpm --filter @moodnight/db migrate:reset",
     "db:deploy": "pnpm --filter @moodnight/db migrate:deploy",
     "db:status": "pnpm --filter @moodnight/db migrate:status",
-    "db:studio": "pnpm --filter @moodnight/db studio"
+    "db:studio": "pnpm --filter @moodnight/db studio",
+    "db:prod:status": "pnpm --filter @moodnight/db prod:status",
+    "db:prod:deploy": "pnpm --filter @moodnight/db prod:deploy"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
