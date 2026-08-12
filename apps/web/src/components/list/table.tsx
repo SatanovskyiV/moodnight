@@ -296,9 +296,40 @@ export function ListTable<Row extends ListRow>({
         {/* Dimmed rather than replaced while a new page is in flight. With
             `keepPreviousData` the rows on screen are the last real answer, and
             the honest thing to show is that they are being replaced — not to
-            throw them away and collapse the table to its header. */}
+            throw them away and collapse the table to its header.
+
+            Both branches name an opacity and `will-change` is unconditional, and
+            that is not tidiness — it is the fix for rows coming back from a
+            search in Safari with the first cell filled in and the other four
+            blank until the pointer touched them. `opacity` under 1 makes a
+            stacking context and `opacity: 1` does not, so a bare
+            `dimmed ? "opacity-60" : ""` built a paint layer at the start of
+            every fetch and tore it down at the end. This is a `<tbody>` —
+            `display: table-row-group` — and globals.css lays a fixed,
+            viewport-sized `mix-blend-mode: overlay` across the whole page in
+            `body::before`, so every repaint under it has to be re-blended.
+            WebKit does not reliably re-raster in-flow cells when a layer appears
+            and vanishes beneath a blend like that; the sticky bar's
+            `backdrop-blur` in components/top-nav/index.tsx gives it a second
+            surface to get wrong. The name column survived because `TableRow`
+            makes the first `<td>` `relative` and positioned content paints in a
+            phase of its own, and hovering brought the rest back because the
+            row's wash and its edge rule force the repaint that was missed.
+
+            It never showed up locally because it cannot: over loopback the fetch
+            resolves in single-digit milliseconds, so `dimmed` goes true and
+            false inside a frame and the layer is never built in the first place.
+            It takes a real round trip to hold the dim on screen long enough to
+            paint — which is to say this reproduces on latency, not on Vercel.
+
+            Naming the property keeps the stacking context there from the first
+            paint, so the transition only ever changes a number on a layer that
+            already exists. If it survives that, the blunt version is to move the
+            dim onto `<Table>` — a `<table>` is an ordinary block box, with none
+            of a row group's compositing frailty — at the cost of dimming the
+            header along with the rows. */}
         <TableBody
-          className={dimmed ? "opacity-60 transition-opacity duration-200" : "transition-opacity"}
+          className={`transition-opacity duration-200 will-change-[opacity] ${dimmed ? "opacity-60" : "opacity-100"}`}
           aria-busy={dimmed || undefined}
         >
           {table.getRowModel().rows.map((row) => (
