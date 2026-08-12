@@ -8,13 +8,12 @@ import { useSession, useSessionHint } from "@/components/session";
 import { Restoring } from "@/components/session/gate";
 
 /**
- * The home page's opening block, in the one version of it that knows who is
- * reading.
+ * The home page's masthead, in the one version of it that knows who is reading.
  *
- * Temporary, and deliberately so: until Phase 2 gives this page a feed to show,
- * the only thing a member can be told is that the night recognised them. What
- * replaces this is a real hero (docs/ROADMAP.md, "Design system"); what should
- * survive it is the greeting below, moved wherever the hero leaves room.
+ * It is the whole of what the front page personalises, and that is by design:
+ * the feed below is identical for a visitor and a member, because nothing on a
+ * published poem depends on who opened it. Keeping the branch here means the
+ * poems never wait on `/auth/refresh` to appear.
  *
  * It takes the anonymous block as `children` rather than rendering it, which is
  * what keeps the read path static. The page is prerendered at build time for

@@ -3,7 +3,7 @@
 import type { ListDefinition } from "@moodnight/shared";
 import { useTranslations } from "next-intl";
 
-import { Seal } from "@/components/editorial/ornaments";
+import { Panel } from "@/components/editorial/panel";
 import { Restoring } from "@/components/session/gate";
 import { Button } from "@/components/ui/button";
 import type { ApiRequestError } from "@/lib/api/error";
@@ -164,26 +164,6 @@ export function ListView<Row extends ListRow, Definition extends ListDefinition>
           <ListPager table={table} total={labels.total} />
         </>
       )}
-    </div>
-  );
-}
-
-/**
- * The empty and no-matches states, in the shape components/area/placeholder.tsx
- * already established for "there is nothing here yet": a seal, a line, and a
- * hairline frame around a wash of lifted ink.
- */
-function Panel({ title, line, action }: { title: string; line: string; action: React.ReactNode }) {
-  return (
-    <div className="border-primary/20 from-secondary/70 to-background/60 compact:px-10 compact:py-14 flex flex-col items-center gap-5 border bg-gradient-to-b px-6 py-10 text-center">
-      <span className="text-primary-deep grid size-12 place-items-center">
-        <Seal className="size-full" />
-      </span>
-
-      <p className="font-display text-foreground tracking-display text-label uppercase">{title}</p>
-      <p className="text-muted-foreground max-w-[34rem] text-balance italic">{line}</p>
-
-      {action}
     </div>
   );
 }

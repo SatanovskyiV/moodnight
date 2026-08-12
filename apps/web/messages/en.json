@@ -85,13 +85,33 @@
     }
   },
   "home": {
-    "phase": "Phase 1",
     "title": "MoodNight",
-    "tagline": "The frame is up. Theme, type and tokens are in place — the poetry follows.",
+    "tagline": "A free home for Ukrainian poetry — where the dark meets candlelight, and every word becomes a fire in the ashes of the night.",
     "welcome": {
       "eyebrow": "The candles know you",
       "line": "Your candle burns again. The night is listening.",
       "since": "In the book of shadows since {date, date, long}"
+    }
+  },
+  "feed": {
+    "eyebrow": "Chosen stanzas",
+    "title": "Fires of the night readings",
+    "line": "Voices that broke through the dark. Keep going down — it is still burning there.",
+    "reads": "{count, plural, one {# reading} other {# readings}}",
+    "expand": "Read in full",
+    "collapse": "Fold away",
+    "opening": "The night unfolds the lines…",
+    "more": "More stanzas",
+    "loading": "The night is turning the pages",
+    "end": "Beyond this, silence",
+    "empty": "Not a word yet",
+    "emptyLine": "The night is quiet: no poem has been carried here yet. Someone's will be the first.",
+    "errorTitle": "The candles went out",
+    "retry": "Try again",
+    "error": {
+      "network": "Silence in answer — the server did not speak. Try again.",
+      "rejected": "The candles did not understand that request. Reload the page and try again.",
+      "unexpected": "Something guttered out on our side. Try again."
     }
   },
   "studio": {

@@ -1,20 +1,29 @@
 import { useTranslations } from "next-intl";
 
+import { Divider } from "@/components/editorial/divider";
+import { Feed } from "@/components/feed";
 import { resolveLocale, type LocaleParams } from "@/i18n/resolve-locale";
 
 import { Welcome } from "./welcome";
 
 /**
- * Placeholder. The prototype port (hero, poem cards, dividers, embers, footer,
- * auth card) replaces this — see docs/ROADMAP.md, Phase 1 step 2. The top bar is
- * already real and lives in the layout.
+ * The front page: a masthead, and then the feed.
  *
- * The one part that is not a placeholder for a stranger is what a member sees:
- * `Welcome` swaps everything below for a greeting once the session has been
- * restored — the swatches included, because a proof that the theme compiles is
- * addressed to us and not to somebody who came here to read poetry. Everything
- * here stays a Server Component either way; see the note on that file for why
- * the anonymous copy is passed to it rather than rendered by it.
+ * The feed is the same for everybody — a visitor and a member are shown the
+ * identical column of poems, because nothing on a published poem depends on who
+ * is reading it. The masthead is the only half that knows, and `Welcome` is what
+ * decides: the wordmark and the site's own line for a stranger, the greeting for
+ * somebody the night recognised.
+ *
+ * That split is deliberate and it is what keeps the page cheap. Everything above
+ * stays a Server Component: the anonymous masthead is *passed* to `Welcome` as
+ * children rather than rendered by it, so it is built at deploy time, ships as
+ * HTML, and costs the client bundle nothing but a reference. See the long note
+ * on ./welcome.tsx for how the three-way swap avoids a flash on the way in.
+ *
+ * What used to be here — a "Phase 1" eyebrow and a row of colour swatches — was
+ * a proof that the theme compiled, addressed to us. This page is addressed to
+ * readers now, so it says what the site is instead.
  */
 export default async function Home(props: LocaleParams) {
   await resolveLocale(props);
@@ -28,43 +37,32 @@ function HomeContent() {
   const t = useTranslations("home");
 
   return (
-    <main className="max-w-reading compact:gap-8 compact:px-8 compact:py-24 relative z-10 mx-auto flex min-h-dvh flex-col justify-center gap-6 px-6 py-16">
-      <Welcome>
-        <p className="font-caps text-primary text-label tracking-eyebrow uppercase">{t("phase")}</p>
+    // `max-w-page`, the wider of the two column tokens: a feed is an editorial
+    // grid and not a single column of verse. The poem *inside* each card still
+    // sets at reading width, which is the card's own business.
+    //
+    // `relative z-10` because body::before and body::after are fixed overlays at
+    // z-index 1 and 2 — the noise and the vignette — and everything readable has
+    // to sit above them.
+    <main className="max-w-page compact:gap-20 compact:px-8 compact:py-24 relative z-10 mx-auto flex flex-col gap-14 px-6 py-16">
+      {/* Centred, because the greeting `Welcome` swaps in is — and a masthead
+          that moved to the left the moment a reader signed in would read as the
+          page rearranging itself around them. */}
+      <div className="max-w-reading compact:gap-8 mx-auto flex w-full flex-col items-center gap-6 text-center">
+        <Welcome>
+          <h1 className="font-display text-foreground tracking-display text-[clamp(2rem,9vw,3rem)] leading-tight uppercase">
+            {t("title")}
+          </h1>
 
-        {/* Fluid rather than stepped, and the only heading on the site that has
-            to be: "MoodNight" is one unbreakable word, so a size that does not
-            fit cannot wrap its way out of trouble — it just runs off the side.
-            At 3rem with 0.18em of tracking that word is around 430px wide, which
-            no phone has. The clamp tracks the viewport from about 360px to about
-            600px and holds the prototype's size for everything above that. */}
-        <h1 className="font-display text-foreground tracking-display text-[clamp(2rem,9vw,3rem)] leading-tight uppercase">
-          {t("title")}
-        </h1>
+          <p className="text-muted-foreground compact:text-xl text-lg text-balance italic">
+            {t("tagline")}
+          </p>
+        </Welcome>
+      </div>
 
-        <p className="text-muted-foreground compact:text-xl text-lg">{t("tagline")}</p>
+      <Divider />
 
-        <div className="border-border flex flex-wrap gap-3 border-t pt-8">
-          {(
-            [
-              ["bg-background", "background"],
-              ["bg-card", "card"],
-              ["bg-secondary", "secondary"],
-              ["bg-primary", "primary"],
-              ["bg-ember", "ember"],
-              ["bg-destructive", "destructive"],
-            ] as const
-          ).map(([className, label]) => (
-            <div key={label} className="flex flex-col items-center gap-2">
-              <div className={`border-border size-12 border ${className}`} />
-              {/* Token names, not prose — deliberately untranslated. */}
-              <span className="text-parchment-faint text-micro tracking-widest uppercase">
-                {label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </Welcome>
+      <Feed />
     </main>
   );
 }

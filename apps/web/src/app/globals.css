@@ -155,12 +155,26 @@
   --text-caption: 0.78rem; /* buttons, captions */
   --text-label: 0.85rem; /* IM Fell labels and nav links */
   --text-brand: 1.1rem; /* the wordmark */
+  /* The illuminated initial at prototype/styles.css:148 — not chrome, and not on
+     Tailwind's ladder either (its `text-7xl` is 4rem against this root). It is
+     one letter at one size wherever it appears, which is what makes it a token
+     rather than an arbitrary value repeated per screen. */
+  --text-dropcap: 4.4rem;
 
   /* --- Tracking ---
      Uppercase display type needs far more of it than Tailwind's ladder offers
      (its widest is 0.1em), so this one starts where Tailwind's ends. */
   --tracking-label: 0.15em; /* nav links, IM Fell labels */
+  /* A poem's title (prototype/styles.css:611). Looser than the page headings
+     above it because it is set much larger — at 2.2rem, `display`'s 0.18em opens
+     a title into four separate words. */
+  --tracking-title: 0.12em;
   --tracking-display: 0.18em; /* Cinzel headings */
+  /* Small caps that name or credit somebody — a poem's author and their role
+     title, the auth card's "already have an account", the footer's legal line
+     (prototype/styles.css:578, 586, 815, 860). Four rules, one value, and none
+     of them a control, which is what keeps it off `action` below. */
+  --tracking-credit: 0.2em;
   --tracking-action: 0.25em; /* buttons */
   --tracking-brand: 0.3em; /* the wordmark */
   --tracking-eyebrow: 0.4em; /* kickers above a heading */
@@ -173,8 +187,26 @@
      re-guessed per component. Names say how loud, not what wears it. */
   --text-shadow-glow: 0 0 10px color-mix(in oklab, var(--accent-gold) 60%, transparent);
   --text-shadow-glow-soft: 0 0 10px color-mix(in oklab, var(--accent-gold) 45%, transparent);
+  /* The drop cap's own, and the only three-layer shadow on the site
+     (prototype/styles.css:153-156): a hairline of pale gold on the letter, a
+     close gold halo, and an ember bloom well outside it. The third stop is the
+     reason this is not `glow-strong` with a bigger radius — that outer wash is
+     `--ember` and not gold at all, which is what makes the initial look lit from
+     behind rather than merely bright. */
+  --text-shadow-illuminated:
+    0 0 1px var(--accent-bright), 0 0 16px color-mix(in oklab, var(--accent-gold) 55%, transparent),
+    0 0 32px color-mix(in oklab, var(--ember) 25%, transparent);
 
   --shadow-deep: 0 30px 80px rgba(0, 0, 0, 0.7);
+  /* The widest and faintest of the four — a poem card lifting under the pointer
+     (prototype/styles.css:520). Broad enough that what a reader notices is the
+     card leaving the page rather than a light switching on, which is why it is
+     not `glow` with a bigger radius: the alpha comes *down* as the radius goes
+     up. The inset is a quarter of that again, so the card's own ground warms
+     with it instead of staying flat inside a halo. */
+  --shadow-halo:
+    0 0 60px color-mix(in oklab, var(--accent-gold) 15%, transparent),
+    inset 0 0 40px color-mix(in oklab, var(--accent-gold) 4%, transparent);
   --shadow-glow: 0 0 40px color-mix(in oklab, var(--accent-gold) 18%, transparent);
   --shadow-glow-soft: 0 0 18px color-mix(in oklab, var(--accent-gold) 25%, transparent);
   /* The prototype's inner light is rgba(255, 220, 150, 0.2) — a warmer, paler

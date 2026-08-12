@@ -5,16 +5,20 @@
  * Read and write endpoints for the MoodNight poetry site. Response shapes come from the zod schemas in @moodnight/shared, the same ones the API validates against.
  * OpenAPI spec version: 0.0.0
  */
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
+  DefinedUseInfiniteQueryResult,
   DefinedUseQueryResult,
+  InfiniteData,
   MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseInfiniteQueryOptions,
+  UseInfiniteQueryResult,
   UseMutationOptions,
   UseMutationResult,
   UseQueryOptions,
@@ -106,9 +110,162 @@ export const listPoems = async (
   });
 };
 
+export const getListPoemsInfiniteQueryKey = (params?: ListPoemsParams) => {
+  return ["infinite", `/poems`, ...(params ? [params] : [])] as const;
+};
+
 export const getListPoemsQueryKey = (params?: ListPoemsParams) => {
   return [`/poems`, ...(params ? [params] : [])] as const;
 };
+
+export const getListPoemsInfiniteQueryOptions = <
+  TData = InfiniteData<Awaited<ReturnType<typeof listPoems>>, ListPoemsParams["page"]>,
+  TError = void,
+>(
+  params?: ListPoemsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof listPoems>>,
+        TError,
+        TData,
+        QueryKey,
+        ListPoemsParams["page"]
+      >
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPoemsInfiniteQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPoems>>,
+    QueryKey,
+    ListPoemsParams["page"]
+  > = ({ signal, pageParam }) =>
+    listPoems({ ...params, page: pageParam ?? params?.["page"] }, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof listPoems>>,
+    TError,
+    TData,
+    QueryKey,
+    ListPoemsParams["page"]
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListPoemsInfiniteQueryResult = NonNullable<Awaited<ReturnType<typeof listPoems>>>;
+export type ListPoemsInfiniteQueryError = void;
+
+export function useListPoemsInfinite<
+  TData = InfiniteData<Awaited<ReturnType<typeof listPoems>>, ListPoemsParams["page"]>,
+  TError = void,
+>(
+  params: undefined | ListPoemsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof listPoems>>,
+        TError,
+        TData,
+        QueryKey,
+        ListPoemsParams["page"]
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPoems>>,
+          TError,
+          Awaited<ReturnType<typeof listPoems>>,
+          QueryKey
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListPoemsInfinite<
+  TData = InfiniteData<Awaited<ReturnType<typeof listPoems>>, ListPoemsParams["page"]>,
+  TError = void,
+>(
+  params?: ListPoemsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof listPoems>>,
+        TError,
+        TData,
+        QueryKey,
+        ListPoemsParams["page"]
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPoems>>,
+          TError,
+          Awaited<ReturnType<typeof listPoems>>,
+          QueryKey
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListPoemsInfinite<
+  TData = InfiniteData<Awaited<ReturnType<typeof listPoems>>, ListPoemsParams["page"]>,
+  TError = void,
+>(
+  params?: ListPoemsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof listPoems>>,
+        TError,
+        TData,
+        QueryKey,
+        ListPoemsParams["page"]
+      >
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List published poems
+ */
+
+export function useListPoemsInfinite<
+  TData = InfiniteData<Awaited<ReturnType<typeof listPoems>>, ListPoemsParams["page"]>,
+  TError = void,
+>(
+  params?: ListPoemsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof listPoems>>,
+        TError,
+        TData,
+        QueryKey,
+        ListPoemsParams["page"]
+      >
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListPoemsInfiniteQueryOptions(params, options);
+
+  const query = useInfiniteQuery(queryOptions, queryClient) as UseInfiniteQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export const getListPoemsQueryOptions = <
   TData = Awaited<ReturnType<typeof listPoems>>,

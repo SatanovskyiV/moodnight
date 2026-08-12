@@ -53,6 +53,22 @@ export default defineConfig({
         // generated function calls it and none of them know anything else about
         // how a request is made.
         mutator: { path: "./src/lib/api/request.ts", name: "request" },
+        // `GET /poems` is the one endpoint read as a scroll rather than as a
+        // page, so it gets a `useListPoemsInfinite` beside the ordinary hook —
+        // one cache entry accumulating pages, instead of a component holding an
+        // array and merging into it by hand. Named per operation rather than
+        // switched on globally: `GET /users` is a table with a pager and an
+        // infinite hook for it would be dead code with a maintenance cost.
+        //
+        // `useInfiniteQueryParam` is the parameter the page cursor is written
+        // into, which for this list framework is `page` — see
+        // packages/shared/src/list.ts. What orval does *not* generate is
+        // `initialPageParam` and `getNextPageParam`; those need `pageCount`,
+        // which only the caller knows how to read, and they live in
+        // src/components/feed/use-feed.ts.
+        operations: {
+          listPoems: { query: { useInfinite: true, useInfiniteQueryParam: "page" } },
+        },
       },
     },
   },

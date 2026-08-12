@@ -133,6 +133,44 @@ export function FlourishRight({ width = 80, height = 14, className }: FlourishPr
 }
 
 /**
+ * Four petals around a bead, from prototype/ornaments.jsx:38-46 — the glyph the
+ * prototype hangs in the middle of every divider.
+ *
+ * The petals are drawn at 0.6 alpha inside the glyph rather than by fading the
+ * whole thing, so the bead at the centre stays solid: that contrast is what
+ * keeps an 18px ornament from turning into a smudge on a dark ground.
+ */
+export function Quatrefoil({ size = 18, className }: OrnamentProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M10 2 C 6 2, 6 6, 10 6 C 14 6, 14 2, 10 2 Z" fill="currentColor" opacity="0.6" />
+      <path
+        d="M18 10 C 18 6, 14 6, 14 10 C 14 14, 18 14, 18 10 Z"
+        fill="currentColor"
+        opacity="0.6"
+      />
+      <path
+        d="M10 18 C 14 18, 14 14, 10 14 C 6 14, 6 18, 10 18 Z"
+        fill="currentColor"
+        opacity="0.6"
+      />
+      <path d="M2 10 C 2 14, 6 14, 6 10 C 6 6, 2 6, 2 10 Z" fill="currentColor" opacity="0.6" />
+      <circle cx="10" cy="10" r="1.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
  * A lit square, turned — the prototype's `.hero-eyebrow .dot`
  * (prototype/styles.css:375-381).
  *
@@ -147,5 +185,50 @@ export function Spark({ className }: { className?: string }) {
       aria-hidden="true"
       className={`bg-primary size-[4px] shrink-0 rotate-45 shadow-[0_0_8px_var(--accent-gold)] ${className ?? ""}`}
     />
+  );
+}
+
+/**
+ * The glyphs a poem card marks its parts with, from prototype/ornaments.jsx:59.
+ *
+ * One component over a map rather than one export per glyph, because that is
+ * what the prototype's own `<Rune glyph="…" />` is and because they share a
+ * `viewBox`, a stroke weight and a cap style — three things that have to agree
+ * for a row of them to sit level beside each other.
+ *
+ * Two of the six are here: `rune1` marks a theme and `eye` marks the read count.
+ * The prototype's `kindle` and `lament` are the reaction buttons, which have no
+ * table behind them until Phase 5 (docs/ROADMAP.md) — the union below is where
+ * they go, one line each, on the day they mean something.
+ */
+const RUNES = {
+  rune1: <path d="M4 3 L4 17 M4 10 L14 3 M4 10 L14 17" />,
+  eye: (
+    <>
+      <path d="M2 9 C 5 4, 13 4, 16 9 C 13 14, 5 14, 2 9 Z" />
+      <circle cx="9" cy="9" r="2" fill="currentColor" />
+    </>
+  ),
+} as const;
+
+export function Rune({
+  glyph,
+  size = 14,
+  className,
+}: OrnamentProps & { glyph: keyof typeof RUNES }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 18 18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      aria-hidden="true"
+      className={className}
+    >
+      {RUNES[glyph]}
+    </svg>
   );
 }
