@@ -2,6 +2,8 @@ import { useTranslations } from "next-intl";
 
 import { Divider } from "@/components/editorial/divider";
 import { Feed } from "@/components/feed";
+import { Button } from "@/components/ui/button";
+import { Link } from "@/i18n/navigation";
 import { resolveLocale, type LocaleParams } from "@/i18n/resolve-locale";
 
 import { Welcome } from "./welcome";
@@ -58,6 +60,22 @@ function HomeContent() {
             {t("tagline")}
           </p>
         </Welcome>
+
+        {/* The way in to writing, and the one control on this page that is the
+            same for everybody.
+
+            It deliberately does not ask who is reading. `Welcome` above knows,
+            and `Feed` below documents why it never asks — a button that branched
+            on a session would be a third place waiting on `/auth/refresh`, and
+            it would put this whole column into the client bundle to save a
+            stranger one click. Instead the link is always here and the studio's
+            own door answers it: a visitor who follows it meets the panel in
+            components/session/gate.tsx, which offers `/sign-in` and sends them
+            back to the page they were reaching for. Nothing here stops being
+            statically prerendered. */}
+        <Button asChild className="compact:px-8 mt-2 px-5 whitespace-normal">
+          <Link href="/studio/poems/new">{t("write")}</Link>
+        </Button>
       </div>
 
       <Divider />

@@ -18,13 +18,28 @@ import { Panel } from "@/components/editorial/panel";
  * first drawn, and it moved out when the feed became its third wearer. No
  * `title` on it: the heading above already says where you are, and the panel
  * repeating it would be the same words twice.
+ *
+ * `action` is passed straight through to that panel, which has taken one since
+ * the feed needed a retry button. A section can be unbuilt and still have
+ * somewhere to send the reader — `/studio/poems` has no dashboard yet and does
+ * have a page that writes a poem — and offering it here is the difference between
+ * a placeholder and a dead end. Optional, because most placeholders have nothing
+ * to offer and a button to nowhere is worse than none.
  */
-export function AreaPlaceholder({ title, line }: { title: string; line: string }) {
+export function AreaPlaceholder({
+  title,
+  line,
+  action,
+}: {
+  title: string;
+  line: string;
+  action?: React.ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-8">
       <AreaHeading title={title} />
 
-      <Panel line={line} />
+      <Panel line={line} action={action} />
     </section>
   );
 }

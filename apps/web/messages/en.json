@@ -87,6 +87,7 @@
   "home": {
     "title": "MoodNight",
     "tagline": "A free home for Ukrainian poetry — where the dark meets candlelight, and every word becomes a fire in the ashes of the night.",
+    "write": "Write a poem",
     "welcome": {
       "eyebrow": "The candles know you",
       "line": "Your candle burns again. The night is listening.",
@@ -119,7 +120,41 @@
     "sections": {
       "poems": {
         "title": "Poems",
-        "line": "This is where you will write new work and keep the written in order — drafts, poems sent to the queue, poems published."
+        "line": "This is where you will write new work and keep the written in order — drafts, poems sent to the queue, poems published.",
+        "write": "Write a poem",
+        "compose": {
+          "title": "A new poem",
+          "line": "Light your candle and write. The lines fall exactly where you put them — the night reflows nothing.",
+          "poemTitle": "Title",
+          "poemTitlePlaceholder": "e.g., A shadow over the field",
+          "subtitle": "Subtitle",
+          "subtitleOptional": "if you want one",
+          "subtitlePlaceholder": "e.g., from the cycle “Burnt Letters”",
+          "body": "The poem",
+          "bodyPlaceholder": "A shadow lay over the field,\nand the wind fell still.",
+          "bodyHint": "Every line break is yours. We reflow nothing and align nothing.",
+          "count": "{count, number} of {max, number} characters",
+          "draft": "Keep as a draft",
+          "draftSubmitting": "Putting it away…",
+          "queue": "Send to the queue",
+          "queueSubmitting": "Sending…",
+          "error": {
+            "title": "Give the poem a title",
+            "body": "A poem with no words is silence",
+            "signedOut": "Your candle went out. Sign in again in another tab — nothing you have written will be lost.",
+            "raced": "Two poems arrived at the same moment. Try again — nothing was lost.",
+            "network": "Silence in answer — the server did not speak. Try again.",
+            "unexpected": "Something guttered out on our side. Try again."
+          },
+          "saved": {
+            "draft": "The draft is put away",
+            "draftLine": "“{title}” is in your coffer. Nobody but you can see it.",
+            "queued": "Sent to the queue",
+            "queuedLine": "“{title}” is waiting for an editor's eye. Once it is approved it will take its place among the fires.",
+            "again": "Write another",
+            "back": "Back to my poems"
+          }
+        }
       }
     }
   },
