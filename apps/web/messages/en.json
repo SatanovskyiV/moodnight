@@ -180,6 +180,27 @@
   "admin": {
     "title": "Administration",
     "sections": {
+      "queue": {
+        "title": "The queue",
+        "line": "Poems waiting for an answer. Oldest first: that one has waited longest.",
+        "searchPlaceholder": "Title or subtitle…",
+        "loading": "The night is going through what was sent",
+        "total": "{count, plural, one {# poem} other {# poems}}",
+        "empty": "The queue is empty",
+        "emptyLine": "No poem is waiting for an answer. Silence here is good news.",
+        "columns": {
+          "title": "Title",
+          "author": "Voice",
+          "returned": "Been back",
+          "createdAt": "Written",
+          "submittedAt": "Waiting since"
+        },
+        "returned": {
+          "REJECT": "Sent back",
+          "APPROVE": "Was on the fires",
+          "never": "First time"
+        }
+      },
       "users": {
         "title": "Names",
         "line": "This is everyone whose candle burns: who is given a key, and whose candle is dimmed.",

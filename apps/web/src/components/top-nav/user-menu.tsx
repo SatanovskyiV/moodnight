@@ -111,9 +111,10 @@ export function UserMenu({
 
         {/* The same floor the area itself keeps: the gentlest of its sections'
             (components/area/links.ts), asked rather than restated, so a door
-            that appears here is a door that opens. Today that is `ADMIN`,
-            because the names are the only section written; the queue arrives
-            with Phase 4 and lets editors back in without an edit here. */}
+            that appears here is a door that opens. That is now `EDITOR`, and it
+            became one when the queue was added to that table — this row let
+            editors back in without an edit here, which is the whole reason it
+            asks rather than declares. */}
         {hasRole(user.role, areaFloor(ADMIN_LINKS)) && (
           <MenuLink href="/admin">{t("administration")}</MenuLink>
         )}

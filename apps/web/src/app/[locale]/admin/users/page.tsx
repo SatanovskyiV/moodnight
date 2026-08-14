@@ -19,9 +19,14 @@ export async function generateMetadata(props: LocaleParams): Promise<Metadata> {
 /**
  * `ADMIN` and above, which is declared in components/area/links.ts and enforced
  * by the shell — not here. The endpoint behind the table is one rung gentler
- * (`@Roles("EDITOR")`), which is deliberate and documented in that file: the
- * queue arrives with Phase 4 and lowers this row on its own. Until then everyone
- * who passes the gate also passes the guard, so the mismatch costs nothing.
+ * (`@Roles("EDITOR")`), and now that the queue has opened the area at `EDITOR`
+ * this is the page where that difference is visible: an editor passes the
+ * frame's gate, is refused at this section's, and meets «Не твій поріг» with the
+ * rail still beside them and the queue one row away. That is the two-gate
+ * arrangement in components/area/shell.tsx doing exactly what it was written
+ * for. The looser guard on `GET /users` is the API's own business and stays as
+ * it is: what an editor may fetch by hand is not what the administration offers
+ * them a door to.
  */
 export default async function AdminUsersPage(props: LocaleParams) {
   await resolveLocale(props);

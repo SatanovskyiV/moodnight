@@ -45,11 +45,20 @@ export const STUDIO_LINKS = [
  * `ROLE_RANK`, so what the rail offers and what the endpoint behind it accepts
  * cannot describe different sites.
  *
- * The names are the only section written so far, which is why the area currently
- * opens at `ADMIN` rather than at `EDITOR` — see {@link areaFloor}. The queue
- * arrives with Phase 4 and lowers it again on its own.
+ * Two sections with two different floors, which is the arrangement this table
+ * was built for and the first time it has had one. The area's own floor is now
+ * `EDITOR`, computed from the queue rather than declared anywhere ({@link
+ * areaFloor}), so an editor belongs in the administration on the strength of the
+ * queue alone and meets `RequireRole` again at the names — inside the frame,
+ * with the rail beside them. Both gates are in components/area/shell.tsx, and
+ * until this row existed the inner one had nothing to refuse.
+ *
+ * The queue goes first because it is what the area opens on: app/[locale]/admin
+ * redirects to the gentlest section rather than to a fixed one, so everybody who
+ * may stand in the hall lands on a door they may open.
  */
 export const ADMIN_LINKS = [
+  { key: "queue", href: "/admin/queue", role: "EDITOR" },
   { key: "users", href: "/admin/users", role: "ADMIN" },
 ] as const satisfies readonly AreaLink[];
 
