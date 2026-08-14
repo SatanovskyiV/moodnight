@@ -914,6 +914,8 @@ export const getListStudioPoemsUrl = (params?: ListStudioPoemsParams) => {
  * `?status=DRAFT&status=REJECTED` accepts several. `search` matches title and subtitle, case-insensitively, and every whitespace-separated term has to match one of them. `?sort=status` orders by the poem's journey — draft, queued, published, rejected — because that is the order the Postgres enum declares.
  *
  * Rows carry the first few lines rather than the whole poem. Ask for one by id to read it in full.
+ *
+ * A poem an editor has decided on carries that decision in `review` — whether it was approved or sent back, and the note explaining why. `review.reviewer` is null for an author: the verdict and the reason are theirs to act on, the name behind them is not.
  * @summary List my poems
  */
 export const listStudioPoems = async (
@@ -1079,6 +1081,8 @@ export const getGetStudioPoemUrl = (id: string) => {
  * An author may read their own poems; an editor may read anybody's, which is what makes reviewing possible: a decision taken on six lines of teaser is not a review, and the `PATCH /poems/{id}` that fixes a line before approving needs the text it is fixing. Somebody else's poem is a 403 for an author, not a 404 — the caller has signed in and typed an id they got from somewhere, and being told it is not theirs is the only answer they can act on.
  *
  * By id rather than slug, like the write routes and unlike `GET /poems/{slug}`: the slug is the poem's public address, and this is the studio's key — it exists before a slug is settled and survives the poem being retitled.
+ *
+ * `review` carries the last decision taken on the poem, or null if none has been. **Its `reviewer` depends on who is asking**: an editor and above are shown who decided, and everybody else — the poem's own author included — receives null there. The verdict and the note are the two things an author can act on and are sent to them in full; who took the decision is editorial business.
  * @summary Read one poem, in full
  */
 export const getStudioPoem = async (
@@ -1248,6 +1252,8 @@ export const getListPoemQueueUrl = (params?: ListPoemQueueParams) => {
  * There is no `status` parameter and cannot be one: the endpoint *is* the status. `author` and `tag` take slugs and may be repeated — `?author=vasyl-stus` is everything one poet has waiting.
  *
  * Rows carry the first few lines. Read a poem in full at `GET /studio/poems/{id}`, which an editor may do for anybody's poem, and decide on it at `POST /poems/{id}/approve` or `/reject`.
+ *
+ * A poem that has been here before carries its last decision in `review` — what was said, and, because the caller moderates, who said it. A poem waiting for the first time carries `null`.
  * @summary List poems waiting for review
  */
 export const listPoemQueue = async (

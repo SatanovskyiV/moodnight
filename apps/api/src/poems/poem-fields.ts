@@ -47,9 +47,53 @@ export const POEM_FIELDS = {
 } as const;
 
 /**
+ * The columns of one moderation decision.
+ *
+ * The reviewer is selected by the same five columns an author is — an editor is
+ * a poet with a role, and `AUTHOR_FIELDS` is already the list of what is safe to
+ * say about an account. Which is worth stating plainly: `role` is not among
+ * them, so the wire never carries the reviewer's *permission*, only the
+ * decorative `roleTitle`. Whether the reviewer is sent at all is a separate
+ * question and a per-caller one — see `reviewerFor` in ./poem-mappers.
+ */
+export const REVIEW_FIELDS = {
+  action: true,
+  note: true,
+  createdAt: true,
+  reviewer: { select: AUTHOR_FIELDS },
+} as const;
+
+/**
+ * The last decision on a poem, and only the last.
+ *
+ * `take: 1` over the newest is what makes this affordable on a list: the queue
+ * and the studio dashboard both fetch twenty poems at a time, and this rides
+ * along on the index `Review` already has for exactly this ordering
+ * (`@@index([poemId, createdAt(sort: Desc)])` in schema.prisma) rather than
+ * loading every decision a poem has ever collected.
+ *
+ * A single-object `orderBy` rather than a tie-broken list, which is safe here
+ * for a reason the queue guarantees: a decision can only be taken on a
+ * PENDING_REVIEW poem, and the `where` on that transition means two of them
+ * cannot land at once. There is no tie to break.
+ */
+export const LATEST_REVIEW = {
+  select: REVIEW_FIELDS,
+  orderBy: { createdAt: "desc" },
+  take: 1,
+} as const;
+
+/**
  * What the write path selects: the same columns, plus the three a reader has no
  * use for and an author cannot work without — the text itself, where it is on
- * its way to being public, and when it was last saved.
+ * its way to being public, and when it was last saved — and the decision that
+ * last moved it.
+ *
+ * The review is spread in **here and not into `POEM_FIELDS`**, which is the
+ * whole reason these two constants are separate. A published poem's moderation
+ * history is not part of the poem: the public feed is cached at the edge and
+ * served to anonymous readers, and an editor's note about a second stanza is
+ * the last thing that belongs in it.
  */
 export const STUDIO_FIELDS = {
   ...POEM_FIELDS,
@@ -57,6 +101,7 @@ export const STUDIO_FIELDS = {
   status: true,
   submittedAt: true,
   updatedAt: true,
+  reviews: LATEST_REVIEW,
 } as const;
 
 export type PoemRow = Prisma.PoemGetPayload<{ select: typeof POEM_FIELDS }>;

@@ -23,6 +23,7 @@ import { type Actor, hasRole, type UserRole, type WritablePoemStatus } from "@mo
  *    PENDING_REVIEW and the queue moves it the rest of the way.
  *    {@link assertMaySetStatus}.
  * 4. **The front page is editorial.** {@link assertMayFeature}.
+ * 5. **So is who decided.** {@link maySeeReviewer}.
  *
  * The role floor on a route is a different question and is answered by
  * `@Roles()` on the controller: that asks whether the caller is the *kind* of
@@ -107,4 +108,28 @@ export function assertMayFeature(role: UserRole, featured: boolean | undefined):
   if (featured !== undefined && !hasRole(role, MODERATOR)) {
     throw new ForbiddenException("Only an editor decides what sits on the front page.");
   }
+}
+
+/**
+ * Rule 5: the verdict and the reason are the author's; the name behind them is
+ * the moderators'.
+ *
+ * An author whose poem comes back is owed the two things they can act on — that
+ * it came back, and why — and `PoemReview` carries both to whoever may reach the
+ * poem. Who took the decision is a different kind of fact: on a site this small
+ * every editor also writes poems and every author knows the handful of people
+ * who might have read theirs, and attaching a name to a rejection turns an
+ * editorial judgement into a personal one between two members of the same group.
+ * So the name goes to the people who moderate, for whom it is a working record —
+ * "who has already looked at this" — and the `Review` row names the reviewer in
+ * the database either way, which is what makes it an audit trail.
+ *
+ * A predicate rather than an `assert*`, unlike the four rules above, and the
+ * difference is deliberate: this one does not refuse a request, it narrows an
+ * answer. Nobody is forbidden anything for asking — the field simply is not
+ * built. Throwing would mean an author could not read their own rejected poem at
+ * all.
+ */
+export function maySeeReviewer(role: UserRole): boolean {
+  return hasRole(role, MODERATOR);
 }

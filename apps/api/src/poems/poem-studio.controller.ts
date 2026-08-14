@@ -81,7 +81,11 @@ export class PoemStudioController {
       "draft, queued, published, rejected — because that is the order the " +
       "Postgres enum declares.\n\n" +
       "Rows carry the first few lines rather than the whole poem. Ask for one " +
-      "by id to read it in full.",
+      "by id to read it in full.\n\n" +
+      "A poem an editor has decided on carries that decision in `review` — " +
+      "whether it was approved or sent back, and the note explaining why. " +
+      "`review.reviewer` is null for an author: the verdict and the reason are " +
+      "theirs to act on, the name behind them is not.",
   })
   @ApiListQuery(studioPoemList)
   @ApiOkResponse({ description: "A page of my poems.", schema: zodRef("StudioPoemPage") })
@@ -110,7 +114,13 @@ export class PoemStudioController {
       "By id rather than slug, like the write routes and unlike " +
       "`GET /poems/{slug}`: the slug is the poem's public address, and this is " +
       "the studio's key — it exists before a slug is settled and survives the " +
-      "poem being retitled.",
+      "poem being retitled.\n\n" +
+      "`review` carries the last decision taken on the poem, or null if none has " +
+      "been. **Its `reviewer` depends on who is asking**: an editor and above " +
+      "are shown who decided, and everybody else — the poem's own author " +
+      "included — receives null there. The verdict and the note are the two " +
+      "things an author can act on and are sent to them in full; who took the " +
+      "decision is editorial business.",
   })
   @ApiParam({ name: "id", format: "uuid", description: "The poem's id." })
   @ApiOkResponse({ description: "The poem.", schema: zodRef("StudioPoem") })

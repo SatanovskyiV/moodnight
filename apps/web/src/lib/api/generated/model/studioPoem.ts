@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.0.0
  */
 import type { PoemAuthor } from "./poemAuthor";
+import type { PoemReview } from "./poemReview";
 import type { PoemTag } from "./poemTag";
 import type { StudioPoemStatus } from "./studioPoemStatus";
 
@@ -50,6 +51,8 @@ export interface StudioPoem {
    * @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
    */
   publishedAt: string | null;
+  /** The last decision an editor took on this poem, or null if nobody has decided on one yet — which is every draft and everything still waiting in the queue for the first time. */
+  review: PoemReview | null;
   /**
    * When the poem last entered the moderation queue, or null if it never has. Not cleared when it leaves — it says when the poem last asked to be read, which stays true afterwards.
    * @nullable

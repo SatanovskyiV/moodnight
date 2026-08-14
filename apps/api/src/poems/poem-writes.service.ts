@@ -126,7 +126,7 @@ export class PoemWritesService {
         select: STUDIO_FIELDS,
       });
 
-      return toStudioPoem(poem);
+      return toStudioPoem(poem, actor.role);
     } catch (error) {
       if (isPrismaError(error, UNIQUE_VIOLATION)) {
         throw new ConflictException(
@@ -198,7 +198,7 @@ export class PoemWritesService {
         select: STUDIO_FIELDS,
       });
 
-      return toStudioPoem(poem);
+      return toStudioPoem(poem, actor.role);
     } catch (error) {
       // Racing a delete: the row was there when `ownershipOf` read it and gone
       // by the time this ran.

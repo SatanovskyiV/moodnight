@@ -809,7 +809,7 @@
     },
     "/studio/poems": {
       "get": {
-        "description": "One page of the poems belonging to the account making the request, most recently saved first. Drafts, poems waiting in the queue, poems published and poems sent back — every state, which is what `GET /poems` cannot answer because it is pinned to the published ones.\n\nThe author is not a parameter and cannot be one: it is the token. There is no query that reaches another account's drafts, which is why `status` is safe to filter on here and absent from the public feed.\n\n`?status=DRAFT&status=REJECTED` accepts several. `search` matches title and subtitle, case-insensitively, and every whitespace-separated term has to match one of them. `?sort=status` orders by the poem's journey — draft, queued, published, rejected — because that is the order the Postgres enum declares.\n\nRows carry the first few lines rather than the whole poem. Ask for one by id to read it in full.",
+        "description": "One page of the poems belonging to the account making the request, most recently saved first. Drafts, poems waiting in the queue, poems published and poems sent back — every state, which is what `GET /poems` cannot answer because it is pinned to the published ones.\n\nThe author is not a parameter and cannot be one: it is the token. There is no query that reaches another account's drafts, which is why `status` is safe to filter on here and absent from the public feed.\n\n`?status=DRAFT&status=REJECTED` accepts several. `search` matches title and subtitle, case-insensitively, and every whitespace-separated term has to match one of them. `?sort=status` orders by the poem's journey — draft, queued, published, rejected — because that is the order the Postgres enum declares.\n\nRows carry the first few lines rather than the whole poem. Ask for one by id to read it in full.\n\nA poem an editor has decided on carries that decision in `review` — whether it was approved or sent back, and the note explaining why. `review.reviewer` is null for an author: the verdict and the reason are theirs to act on, the name behind them is not.",
         "operationId": "listStudioPoems",
         "parameters": [
           {
@@ -915,7 +915,7 @@
     },
     "/studio/poems/{id}": {
       "get": {
-        "description": "The whole poem, whatever state it is in — the text, its status, when it was submitted and when it was last saved.\n\nAn author may read their own poems; an editor may read anybody's, which is what makes reviewing possible: a decision taken on six lines of teaser is not a review, and the `PATCH /poems/{id}` that fixes a line before approving needs the text it is fixing. Somebody else's poem is a 403 for an author, not a 404 — the caller has signed in and typed an id they got from somewhere, and being told it is not theirs is the only answer they can act on.\n\nBy id rather than slug, like the write routes and unlike `GET /poems/{slug}`: the slug is the poem's public address, and this is the studio's key — it exists before a slug is settled and survives the poem being retitled.",
+        "description": "The whole poem, whatever state it is in — the text, its status, when it was submitted and when it was last saved.\n\nAn author may read their own poems; an editor may read anybody's, which is what makes reviewing possible: a decision taken on six lines of teaser is not a review, and the `PATCH /poems/{id}` that fixes a line before approving needs the text it is fixing. Somebody else's poem is a 403 for an author, not a 404 — the caller has signed in and typed an id they got from somewhere, and being told it is not theirs is the only answer they can act on.\n\nBy id rather than slug, like the write routes and unlike `GET /poems/{slug}`: the slug is the poem's public address, and this is the studio's key — it exists before a slug is settled and survives the poem being retitled.\n\n`review` carries the last decision taken on the poem, or null if none has been. **Its `reviewer` depends on who is asking**: an editor and above are shown who decided, and everybody else — the poem's own author included — receives null there. The verdict and the note are the two things an author can act on and are sent to them in full; who took the decision is editorial business.",
         "operationId": "getStudioPoem",
         "parameters": [
           {
@@ -964,7 +964,7 @@
     },
     "/admin/queue": {
       "get": {
-        "description": "Every poem in PENDING_REVIEW, oldest submission first. For editors and above.\n\n**The only list on this API that ascends by default**, because that is what a queue is: read newest-first, the poem that has waited longest is the one nobody ever reaches. It is ordered by when the poem entered the queue and not by when it was last saved, so an editor who fixes a line before approving does not push it to the back of the queue they are working through.\n\nThere is no `status` parameter and cannot be one: the endpoint *is* the status. `author` and `tag` take slugs and may be repeated — `?author=vasyl-stus` is everything one poet has waiting.\n\nRows carry the first few lines. Read a poem in full at `GET /studio/poems/{id}`, which an editor may do for anybody's poem, and decide on it at `POST /poems/{id}/approve` or `/reject`.",
+        "description": "Every poem in PENDING_REVIEW, oldest submission first. For editors and above.\n\n**The only list on this API that ascends by default**, because that is what a queue is: read newest-first, the poem that has waited longest is the one nobody ever reaches. It is ordered by when the poem entered the queue and not by when it was last saved, so an editor who fixes a line before approving does not push it to the back of the queue they are working through.\n\nThere is no `status` parameter and cannot be one: the endpoint *is* the status. `author` and `tag` take slugs and may be repeated — `?author=vasyl-stus` is everything one poet has waiting.\n\nRows carry the first few lines. Read a poem in full at `GET /studio/poems/{id}`, which an editor may do for anybody's poem, and decide on it at `POST /poems/{id}/approve` or `/reject`.\n\nA poem that has been here before carries its last decision in `review` — what was said, and, because the caller moderates, who said it. A poem waiting for the first time carries `null`.",
         "operationId": "listPoemQueue",
         "parameters": [
           {
@@ -1763,6 +1763,41 @@
         "additionalProperties": false,
         "description": "A page of poems, and how many match in total."
       },
+      "PoemReview": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["APPROVE", "REJECT"],
+            "description": "APPROVE published the poem; REJECT sent it back to its author.",
+            "example": "REJECT"
+          },
+          "note": {
+            "nullable": true,
+            "description": "What the editor wrote to the author. Always present on a rejection — the API refuses one without a reason — and often null on an approval.",
+            "example": "Гарний початок, але друга строфа обривається раніше за думку.",
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When the decision was taken."
+          },
+          "reviewer": {
+            "nullable": true,
+            "description": "Who decided, for editors and above. Null for anyone else — including the poem's own author, who is shown the verdict and the reason but not the name behind them.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoemAuthor"
+              }
+            ]
+          }
+        },
+        "required": ["action", "note", "decidedAt", "reviewer"],
+        "additionalProperties": false,
+        "description": "The last moderation decision taken on a poem."
+      },
       "StudioPoem": {
         "type": "object",
         "properties": {
@@ -1825,6 +1860,15 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
           },
+          "review": {
+            "nullable": true,
+            "description": "The last decision an editor took on this poem, or null if nobody has decided on one yet — which is every draft and everything still waiting in the queue for the first time.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoemReview"
+              }
+            ]
+          },
           "submittedAt": {
             "nullable": true,
             "description": "When the poem last entered the moderation queue, or null if it never has. Not cleared when it leaves — it says when the poem last asked to be read, which stays true afterwards.",
@@ -1860,6 +1904,7 @@
           "featured",
           "status",
           "publishedAt",
+          "review",
           "submittedAt",
           "createdAt",
           "updatedAt",
@@ -2022,6 +2067,15 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
           },
+          "review": {
+            "nullable": true,
+            "description": "The last decision an editor took on this poem, or null if nobody has decided on one yet — which is every draft and everything still waiting in the queue for the first time.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoemReview"
+              }
+            ]
+          },
           "submittedAt": {
             "nullable": true,
             "description": "When the poem last entered the moderation queue, or null if it never has. Not cleared when it leaves — it says when the poem last asked to be read, which stays true afterwards.",
@@ -2062,6 +2116,7 @@
           "featured",
           "status",
           "publishedAt",
+          "review",
           "submittedAt",
           "createdAt",
           "updatedAt",

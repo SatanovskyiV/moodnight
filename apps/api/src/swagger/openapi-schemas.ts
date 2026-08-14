@@ -8,6 +8,7 @@ import {
   loginSchema,
   poemAuthorSchema,
   poemPageSchema,
+  poemReviewSchema,
   poemSchema,
   poemSummarySchema,
   poemTagSchema,
@@ -67,6 +68,13 @@ const openApiSchemas = {
   Poem: poemSchema,
   PoemSummary: poemSummarySchema,
   PoemPage: poemPageSchema,
+  // Nested by both studio shapes, and registered in its own right for the same
+  // reason `PoemAuthor` is: one `PoemReview` type in the generated client rather
+  // than two identical anonymous ones. Its `reviewer` is a `PoemAuthor` — an
+  // editor is a poet with a role, and the fields a client renders are the same
+  // ones — so the document reuses that component instead of naming a second
+  // shape with the same five properties.
+  PoemReview: poemReviewSchema,
   // The write path, and a third shape for the same model — which the document
   // should say plainly rather than leave a client to discover. `StudioPoem`
   // carries `status` and a nullable `publishedAt` because that is what a poem

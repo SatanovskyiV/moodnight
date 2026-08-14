@@ -66,7 +66,11 @@ export class PoemStudioService {
       this.prisma.poem.count({ where }),
     ]);
 
-    return toPage(poems.map(toStudioSummary), total, query);
+    return toPage(
+      poems.map((poem) => toStudioSummary(poem, actor.role)),
+      total,
+      query,
+    );
   }
 
   /**
@@ -95,6 +99,6 @@ export class PoemStudioService {
 
     assertMayReach(actor, poem);
 
-    return toStudioPoem(poem);
+    return toStudioPoem(poem, actor.role);
   }
 }

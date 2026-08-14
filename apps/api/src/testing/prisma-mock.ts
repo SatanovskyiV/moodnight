@@ -176,13 +176,54 @@ export function poemRow(overrides: Partial<PoemRowFixture> = {}): PoemRowFixture
   };
 }
 
+/** Fixed, so a spec can name the exact ISO string a decision's `decidedAt` becomes. */
+const DECIDED_AT = new Date("2026-03-01T12:13:14.000Z");
+
+export interface ReviewRowFixture {
+  action: "APPROVE" | "REJECT";
+  note: string | null;
+  createdAt: Date;
+  reviewer: PoemRowFixture["author"];
+}
+
+/**
+ * One decision as `REVIEW_FIELDS` selects it — the nested reviewer included,
+ * which is the whole point of the fixture: the mapper's job is to decide whether
+ * that object reaches the wire, and a row without one could not tell the two
+ * answers apart.
+ *
+ * The reviewer is deliberately a different person from `poemRow`'s author, so a
+ * spec asserting on a `penName` is asserting on the reviewer's and not on one
+ * that happens to match.
+ */
+export function reviewRow(overrides: Partial<ReviewRowFixture> = {}): ReviewRowFixture {
+  return {
+    action: "REJECT",
+    note: "Друга строфа обривається раніше за думку.",
+    createdAt: DECIDED_AT,
+    reviewer: {
+      slug: "orysia-vechirnia",
+      penName: "Орися Вечірня",
+      initials: "ОВ",
+      roleTitle: "Хранитель слова",
+      avatarUrl: null,
+    },
+    ...overrides,
+  };
+}
+
 /**
  * A poem as the *write* path selects it — `STUDIO_FIELDS`, which is the read
- * path's columns plus the three an author cannot work without.
+ * path's columns plus the three an author cannot work without and the poem's
+ * last moderation decision.
  *
  * Defaults to a published poem so a spec has to say `{ status: "DRAFT" }` when
  * it means one; the alternative default would let the "a published poem cannot
  * be deleted" case pass without ever exercising it.
+ *
+ * `reviews` defaults to empty — the ordinary state of a poem nobody has decided
+ * on — so a spec that cares about the review says `{ reviews: [reviewRow()] }`
+ * and one that does not still exercises the null branch.
  */
 export function studioPoemRow(overrides: Partial<StudioPoemRowFixture> = {}) {
   return {
@@ -191,6 +232,7 @@ export function studioPoemRow(overrides: Partial<StudioPoemRowFixture> = {}) {
     submittedAt: SUBMITTED_AT as Date | null,
     updatedAt: UPDATED_AT,
     authorId: USER_ID,
+    reviews: [] as ReviewRowFixture[],
     ...overrides,
   };
 }
@@ -199,6 +241,12 @@ export interface StudioPoemRowFixture extends PoemRowFixture {
   status: "DRAFT" | "PENDING_REVIEW" | "PUBLISHED" | "REJECTED";
   submittedAt: Date | null;
   updatedAt: Date;
+  /**
+   * At most one row, because `LATEST_REVIEW` selects the newest and takes one.
+   * An array all the same, since that is what a to-many relation comes back as
+   * and the mapper is what unwraps it.
+   */
+  reviews: ReviewRowFixture[];
   /**
    * Selected only by `PoemStudioService.findById`, which needs it to ask whether
    * the caller may reach this poem — `STUDIO_FIELDS` alone does not include it,

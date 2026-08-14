@@ -21,6 +21,7 @@ import {
   type PrismaMock,
   prismaError,
   queuedPoemRow,
+  reviewRow,
   studioPoemRow,
   USER_ID,
   UUID_V4,
@@ -202,6 +203,37 @@ describe("Moderation queue endpoints", () => {
 
       expect(body.items[0]).toMatchObject({ truncated: true, status: "PENDING_REVIEW" });
       expect(body.items[0].body).toBeUndefined();
+    });
+
+    /** A poem waiting for the first time has nothing behind it yet. */
+    it("carries no review on a poem that has never been decided on", async () => {
+      const { body } = await request(app.getHttpServer())
+        .get("/admin/queue")
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.items[0].review).toBeNull();
+    });
+
+    /**
+     * The queue's own use of the field: a resubmitted poem shows what was said
+     * about it last time and who said it, so an editor knows whether they are
+     * reading it for the first time.
+     */
+    it("carries the last decision, reviewer and all, on a resubmitted poem", async () => {
+      prisma.poem.findMany.mockResolvedValue([queuedPoemRow({ reviews: [reviewRow()] })]);
+
+      const { body } = await request(app.getHttpServer())
+        .get("/admin/queue")
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.items[0].review).toMatchObject({
+        action: "REJECT",
+        note: "Друга строфа обривається раніше за думку.",
+        decidedAt: "2026-03-01T12:13:14.000Z",
+        reviewer: { penName: "Орися Вечірня" },
+      });
     });
   });
 
@@ -473,6 +505,58 @@ describe("Moderation queue endpoints", () => {
         .set(...bearer(asEditor))
         .send(withNote)
         .expect(404);
+    });
+  });
+
+  /**
+   * What comes back from a decision, which is the poem carrying the decision
+   * just taken. Both cases here are about the same thing at two levels: the
+   * order the two writes run in, and the response that order makes possible.
+   */
+  describe("the decision in the answer", () => {
+    /** The body a rejection needs, spelled again — the sibling block's is its own. */
+    const withNote = { note: "Друга строфа обривається раніше за думку." };
+
+    /**
+     * The load-bearing half. The poem is re-read through `STUDIO_FIELDS`, which
+     * selects the newest `Review` along with it — so an update running before
+     * the insert would answer with the *previous* verdict, or with none at all.
+     * Asserted on the order the mocks were called in rather than on the
+     * response, because the stubs cannot reproduce a transaction seeing its own
+     * writes; what a spec can honestly check here is which write went first.
+     */
+    it("writes the review before it re-reads the poem", async () => {
+      await request(app.getHttpServer())
+        .post(`/poems/${POEM_ID}/reject`)
+        .set(...bearer(asEditor))
+        .send(withNote)
+        .expect(200);
+
+      const [wrote] = prisma.review.create.mock.invocationCallOrder;
+      const [read] = prisma.poem.update.mock.invocationCallOrder;
+
+      // Named rather than asserted straight through `toBeLessThan`, so a run
+      // where one of them never happened fails as "undefined" here instead of
+      // as a comparison against nothing.
+      expect({ wrote, read }).toEqual({ wrote: expect.any(Number), read: expect.any(Number) });
+      expect(wrote as number).toBeLessThan(read as number);
+    });
+
+    it("answers with the decision on the poem", async () => {
+      prisma.poem.update.mockResolvedValue(
+        studioPoemRow({ status: "REJECTED", publishedAt: null, reviews: [reviewRow()] }),
+      );
+
+      const { body } = await request(app.getHttpServer())
+        .post(`/poems/${POEM_ID}/reject`)
+        .set(...bearer(asEditor))
+        .send(withNote)
+        .expect(200);
+
+      expect(body.review).toMatchObject({
+        action: "REJECT",
+        reviewer: { penName: "Орися Вечірня" },
+      });
     });
   });
 });

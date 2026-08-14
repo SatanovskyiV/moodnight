@@ -18,6 +18,7 @@ import {
   POEM_ID,
   type PrismaMock,
   queuedPoemRow,
+  reviewRow,
   studioPoemRow,
   USER_ID,
   UUID_V4,
@@ -283,6 +284,125 @@ describe("Studio poem endpoints", () => {
         .expect(400);
 
       expect(prisma.poem.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The one field on this API whose *contents* depend on who asked for it.
+   *
+   * Both halves are worth a case of their own, because the failure modes point
+   * in opposite directions and only one of them is visible: an author who is
+   * not told why their poem came back has been told nothing they can act on,
+   * and an author who is told *who* sent it back has been given something the
+   * site deliberately keeps between moderators.
+   */
+  describe("the review on a poem", () => {
+    /** A poem sent back, with the decision that sent it. */
+    const rejected = (authorId = USER_ID) =>
+      studioPoemRow({
+        status: "REJECTED",
+        publishedAt: null,
+        authorId,
+        reviews: [reviewRow()],
+      });
+
+    it("is null on a poem nobody has decided on", async () => {
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .expect(200);
+
+      expect(body.review).toBeNull();
+    });
+
+    it("tells the author the verdict and the reason", async () => {
+      prisma.poem.findUnique.mockResolvedValue(rejected());
+
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .expect(200);
+
+      expect(body.review).toMatchObject({
+        action: "REJECT",
+        note: "Друга строфа обривається раніше за думку.",
+        decidedAt: "2026-03-01T12:13:14.000Z",
+      });
+    });
+
+    /** Rule 5. The verdict is the author's; the name behind it is not. */
+    it("does not tell the author who decided", async () => {
+      prisma.poem.findUnique.mockResolvedValue(rejected());
+
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .expect(200);
+
+      expect(body.review.reviewer).toBeNull();
+      // Not merely absent from `reviewer`: the name must not have reached the
+      // response by any other route either.
+      expect(JSON.stringify(body)).not.toContain("Орися");
+    });
+
+    it("tells an editor who decided", async () => {
+      prisma.poem.findUnique.mockResolvedValue(rejected());
+
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.review.reviewer).toMatchObject({
+        slug: "orysia-vechirnia",
+        penName: "Орися Вечірня",
+        initials: "ОВ",
+        roleTitle: "Хранитель слова",
+      });
+    });
+
+    /**
+     * `AUTHOR_FIELDS` is what the reviewer is selected by, and `role` is not in
+     * it — so the wire carries the decorative title and never the permission.
+     * The same boundary the schema draws around a poem's author.
+     */
+    it("never carries the reviewer's permission", async () => {
+      prisma.poem.findUnique.mockResolvedValue(rejected());
+
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.review.reviewer.role).toBeUndefined();
+    });
+
+    /** The list shape carries it too — a dashboard shows why a poem came back. */
+    it("rides along on the rows of the dashboard", async () => {
+      prisma.poem.findMany.mockResolvedValue([rejected()]);
+
+      const { body } = await request(app.getHttpServer())
+        .get("/studio/poems")
+        .set(...bearer(asAuthor))
+        .expect(200);
+
+      expect(body.items[0].review).toMatchObject({ action: "REJECT", reviewer: null });
+    });
+
+    /**
+     * An editor's own studio is still their own shelf, and the rule is about
+     * the caller rather than about the screen: they moderate, so they see the
+     * name, even on their own poem.
+     */
+    it("follows the caller's role and not the endpoint", async () => {
+      prisma.poem.findMany.mockResolvedValue([rejected(OTHER_USER_ID)]);
+
+      const { body } = await request(app.getHttpServer())
+        .get("/studio/poems")
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.items[0].review.reviewer).toMatchObject({ penName: "Орися Вечірня" });
     });
   });
 });

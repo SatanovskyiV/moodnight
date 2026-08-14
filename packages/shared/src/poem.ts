@@ -234,13 +234,75 @@ export const poemPageSchema = poemList.page.meta({
 export type PoemPage = z.infer<typeof poemPageSchema>;
 
 /**
+ * Which way a decision went. Kept in step with the `ReviewAction` enum in
+ * packages/db by the mapper in the API's poems module, the same arrangement
+ * {@link poemStatusSchema} has.
+ */
+export const reviewActionSchema = z.enum(["APPROVE", "REJECT"]).meta({
+  description: "APPROVE published the poem; REJECT sent it back to its author.",
+  example: "REJECT",
+});
+
+export type ReviewAction = z.infer<typeof reviewActionSchema>;
+
+/**
+ * The last decision taken on a poem — who said what, and when.
+ *
+ * **Only the last one.** A poem rejected, revised and approved has two `Review`
+ * rows behind it, and this is the newer. The whole trail is history worth
+ * keeping in the table and not worth sending on every row of a queue: what a
+ * client renders is "sent back on Tuesday, because —", and that is one row.
+ *
+ * **`reviewer` is nullable, and the null carries information.** It is not "the
+ * decision was anonymous" — every `Review` names its reviewer in the database.
+ * It means *this caller is not allowed to know*. Who moderates whom is
+ * editorial business: an author is owed the verdict and the reason, which are
+ * the two things they can act on, and is not owed the name of the person who
+ * took the decision. The line is drawn in `reviewerFor` in the API's poem
+ * mappers, and it is drawn there rather than in this schema for the reason
+ * every rule in `poem-access.ts` lives where it does — it is a comparison
+ * between the caller and the row, and a schema sees only one of them.
+ *
+ * The reviewer is described by {@link poemAuthorSchema} rather than a shape of
+ * its own, and deliberately so: an editor is a poet with a role, the fields a
+ * client needs to render one are exactly the fields it needs to render the
+ * other, and two structurally identical components would become two identical
+ * types in the generated client for no gain. Nothing about the *permission*
+ * appears here — `roleTitle` is the decorative "Хранитель слова" and `role` is
+ * absent, which is the same boundary the schema draws for an author.
+ */
+export const poemReviewSchema = z
+  .object({
+    action: reviewActionSchema,
+    note: z
+      .string()
+      .nullable()
+      .meta({
+        description:
+          "What the editor wrote to the author. Always present on a rejection — " +
+          "the API refuses one without a reason — and often null on an approval.",
+        example: "Гарний початок, але друга строфа обривається раніше за думку.",
+      }),
+    decidedAt: z.iso.datetime().meta({ description: "When the decision was taken." }),
+    reviewer: poemAuthorSchema.nullable().meta({
+      description:
+        "Who decided, for editors and above. Null for anyone else — including " +
+        "the poem's own author, who is shown the verdict and the reason but not " +
+        "the name behind them.",
+    }),
+  })
+  .meta({ description: "The last moderation decision taken on a poem." });
+
+export type PoemReview = z.infer<typeof poemReviewSchema>;
+
+/**
  * Everything the private half of the site says about a poem, and the base its
  * two shapes are built from — the same factoring {@link poemCoreSchema} does
  * for the public half, and for the same reason: the full poem and the row in a
  * list must differ in exactly one field, and writing them separately is how
  * they stop doing so.
  *
- * Four differences from {@link poemSchema}, and each of them is why these exist
+ * Five differences from {@link poemSchema}, and each of them is why these exist
  * rather than being the same schemas:
  *
  * - **`status` is present.** On the read path it is absent because the answer
@@ -254,6 +316,10 @@ export type PoemPage = z.infer<typeof poemPageSchema>;
  *   the queue is ordered by and what "waiting since Tuesday" is rendered from.
  * - **`updatedAt` is present.** "Saved just now" is what an editor needs to
  *   see and a reader does not.
+ * - **`review` is present.** `status` says a poem was sent back; this says why,
+ *   and — to an editor — by whom. A REJECTED poem with no reason attached is
+ *   the state the `Review` table exists to prevent, and it stays prevented only
+ *   if something actually reads the row back.
  *
  * `readCount` and `featured` come along unchanged and are both read-only in
  * practice: nothing an author sends sets them, and `featured` is writable only
@@ -263,6 +329,12 @@ const studioPoemCoreSchema = poemCoreSchema.omit({ publishedAt: true }).extend({
   status: poemStatusSchema,
   publishedAt: z.iso.datetime().nullable().meta({
     description: "When the poem became public, or null if it never has.",
+  }),
+  review: poemReviewSchema.nullable().meta({
+    description:
+      "The last decision an editor took on this poem, or null if nobody has " +
+      "decided on one yet — which is every draft and everything still waiting " +
+      "in the queue for the first time.",
   }),
   submittedAt: z.iso
     .datetime()

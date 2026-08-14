@@ -9,13 +9,14 @@ import {
   ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
 import {
+  type Actor,
   poemQueueList,
   type PoemQueueQuery,
   poemQueueQuerySchema,
   type StudioPoemPage,
 } from "@moodnight/shared";
 
-import { Roles } from "../auth/decorators";
+import { CurrentUser, Roles } from "../auth/decorators";
 import { JwtAuthGuard } from "../auth/guards";
 import { RolesGuard } from "../auth/roles.guard";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
@@ -38,9 +39,14 @@ import { PoemQueueService } from "./poem-queue.service";
  * it came from. Both classes share `PoemQueueService`, which is where the two
  * rows a decision writes are kept together.
  *
- * No `@CurrentUser()` here. Every editor sees the same queue — there is no
- * assignment, no claiming, no per-reviewer slice — so the token decides whether
- * the request is answered and nothing about what it contains.
+ * Every editor sees the same queue — there is no assignment, no claiming, no
+ * per-reviewer slice — so the token decides nothing about *which* rows come
+ * back. `@CurrentUser()` is here for the one thing it does decide: a poem that
+ * has been through the queue before carries the decision that sent it back, and
+ * the name on that decision is a moderator's to see. The role is passed down
+ * rather than inferred from `@Roles("EDITOR")` above it, so what the response
+ * contains follows from who is asking and not from a decorator a refactor could
+ * move.
  */
 @ApiTags("poems")
 @ApiBearerAuth("access-token")
@@ -70,14 +76,18 @@ export class PoemQueueController {
       "`?author=vasyl-stus` is everything one poet has waiting.\n\n" +
       "Rows carry the first few lines. Read a poem in full at " +
       "`GET /studio/poems/{id}`, which an editor may do for anybody's poem, and " +
-      "decide on it at `POST /poems/{id}/approve` or `/reject`.",
+      "decide on it at `POST /poems/{id}/approve` or `/reject`.\n\n" +
+      "A poem that has been here before carries its last decision in `review` — " +
+      "what was said, and, because the caller moderates, who said it. A poem " +
+      "waiting for the first time carries `null`.",
   })
   @ApiListQuery(poemQueueList)
   @ApiOkResponse({ description: "A page of waiting poems.", schema: zodRef("StudioPoemPage") })
   @ApiBadRequestResponse({ description: "The query does not match the schema." })
   list(
     @Query(new ZodValidationPipe(poemQueueQuerySchema)) query: PoemQueueQuery,
+    @CurrentUser() actor: Actor,
   ): Promise<StudioPoemPage> {
-    return this.queue.list(query);
+    return this.queue.list(query, actor);
   }
 }

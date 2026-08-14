@@ -31,6 +31,8 @@ export * from "./login";
 export * from "./poem";
 export * from "./poemAuthor";
 export * from "./poemPage";
+export * from "./poemReview";
+export * from "./poemReviewAction";
 export * from "./poemSummary";
 export * from "./poemTag";
 export * from "./register";

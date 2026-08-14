@@ -88,7 +88,7 @@ export class PoemQueueService {
    * who fixes a line before approving does not push the poem to the back of the
    * queue they are currently working through.
    */
-  async list(query: PoemQueueQuery): Promise<StudioPoemPage> {
+  async list(query: PoemQueueQuery, actor: Actor): Promise<StudioPoemPage> {
     const { where, orderBy, skip, take } = listArgs<
       Prisma.PoemWhereInput,
       Prisma.PoemOrderByWithRelationInput
@@ -99,7 +99,16 @@ export class PoemQueueService {
       this.prisma.poem.count({ where }),
     ]);
 
-    return toPage(poems.map(toStudioSummary), total, query);
+    // The actor decides nothing about *which* rows come back — every editor
+    // reads the same queue — and one thing about what is in them: the reviewer
+    // on a poem that has been here before. Passed through rather than assumed
+    // from `@Roles("EDITOR")` on the controller, so the rule stays a fact about
+    // the caller and not about a decorator in another file.
+    return toPage(
+      poems.map((poem) => toStudioSummary(poem, actor.role)),
+      total,
+      query,
+    );
   }
 
   /**
@@ -117,13 +126,17 @@ export class PoemQueueService {
   async approve(id: string, input: ApprovePoemInput, actor: Actor): Promise<StudioPoem> {
     const current = await this.waiting(id);
 
-    return this.decide(id, {
-      data: {
-        status: "PUBLISHED",
-        ...(current.publishedAt === null ? { publishedAt: new Date() } : {}),
+    return this.decide(
+      id,
+      {
+        data: {
+          status: "PUBLISHED",
+          ...(current.publishedAt === null ? { publishedAt: new Date() } : {}),
+        },
+        review: { action: "APPROVE", note: input.note ?? null, reviewerId: actor.id },
       },
-      review: { action: "APPROVE", note: input.note ?? null, reviewerId: actor.id },
-    });
+      actor,
+    );
   }
 
   /**
@@ -141,10 +154,14 @@ export class PoemQueueService {
   async reject(id: string, input: RejectPoemInput, actor: Actor): Promise<StudioPoem> {
     await this.waiting(id);
 
-    return this.decide(id, {
-      data: { status: "REJECTED" },
-      review: { action: "REJECT", note: input.note, reviewerId: actor.id },
-    });
+    return this.decide(
+      id,
+      {
+        data: { status: "REJECTED" },
+        review: { action: "REJECT", note: input.note, reviewerId: actor.id },
+      },
+      actor,
+    );
   }
 
   /**
@@ -160,6 +177,16 @@ export class PoemQueueService {
    * the transaction rolls back, and no second `Review` is written against a poem
    * that had already left the queue. Without it the loser would silently
    * overwrite the winner's decision and both rows would survive.
+   *
+   * **The `Review` is written first, and the order is load-bearing.** The poem
+   * comes back through `STUDIO_FIELDS`, which now selects the newest decision
+   * along with it — so an update that ran before the insert would answer with
+   * the *previous* verdict on a poem being decided a second time, or with none
+   * at all on a first. Both operations run inside one transaction and a
+   * transaction sees its own writes, so putting the insert first is all it takes
+   * for the response to carry the decision it just took. The rollback is
+   * unchanged either way: if the guarded update matches no row, neither row
+   * survives.
    */
   private async decide(
     id: string,
@@ -167,23 +194,27 @@ export class PoemQueueService {
       data: Prisma.PoemUpdateInput;
       review: { action: "APPROVE" | "REJECT"; note: string | null; reviewerId: string };
     },
+    actor: Actor,
   ): Promise<StudioPoem> {
     try {
-      const [poem] = await this.prisma.$transaction([
+      const [, poem] = await this.prisma.$transaction([
+        this.prisma.review.create({
+          // Nothing reads the row back through this handle — the decision the
+          // client receives is the poem, which the update below re-reads it
+          // through — so only the key comes home.
+          data: { ...decision.review, poemId: id },
+          select: { id: true },
+        }),
         this.prisma.poem.update({
           where: { id, ...QUEUED },
           data: decision.data,
           select: STUDIO_FIELDS,
         }),
-        this.prisma.review.create({
-          // Nothing reads the row back — the decision the client receives is the
-          // poem — so only the key comes home.
-          data: { ...decision.review, poemId: id },
-          select: { id: true },
-        }),
       ]);
 
-      return toStudioPoem(poem);
+      // Always an editor, by the floor on both controllers — so the poem goes
+      // back carrying the name of whoever just decided on it.
+      return toStudioPoem(poem, actor.role);
     } catch (error) {
       // The row was PENDING_REVIEW when `waiting` read it and is not any more.
       // A 409 rather than the 404 this code usually means: the poem is still
