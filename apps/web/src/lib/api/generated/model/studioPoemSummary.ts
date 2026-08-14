@@ -7,12 +7,12 @@
  */
 import type { PoemAuthor } from "./poemAuthor";
 import type { PoemTag } from "./poemTag";
-import type { StudioPoemStatus } from "./studioPoemStatus";
+import type { StudioPoemSummaryStatus } from "./studioPoemSummaryStatus";
 
 /**
- * A poem as its author sees it, drafts included.
+ * A poem as a row in the studio or the queue.
  */
-export interface StudioPoem {
+export interface StudioPoemSummary {
   /**
    * UUIDv7 — time-ordered, so it sorts by creation.
    * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
@@ -43,7 +43,7 @@ export interface StudioPoem {
   /** Whether an editor has put it on the front page. */
   featured: boolean;
   /** Where the poem is on its way to being public. Only PUBLISHED poems are returned by the public endpoints. */
-  status: StudioPoemStatus;
+  status: StudioPoemSummaryStatus;
   /**
    * When the poem became public, or null if it never has.
    * @nullable
@@ -66,6 +66,8 @@ export interface StudioPoem {
    * @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
    */
   updatedAt: string;
-  /** The poem, newline-separated. */
-  body: string;
+  /** The first 6 lines, newline-separated. */
+  teaser: string;
+  /** Whether the poem is longer than the teaser shows. */
+  truncated: boolean;
 }

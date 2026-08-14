@@ -1,14 +1,16 @@
 import type { Prisma } from "@moodnight/db";
 
+import type { RelationFilter } from "../common/list-query";
+
 /**
- * The columns a poem is read out of the database with, shared by the read path
- * and the write one.
+ * The columns a poem is read out of the database with, and what its two relation
+ * filters mean in SQL — the query pieces every service on `/poems` shares.
  *
- * They live in their own file because both services select them and only one of
- * them is public. Duplicating the lists would mean the studio's copy could
+ * They live in their own file because four services select them and only one of
+ * those is public. Duplicating the lists would mean the studio's copy could
  * quietly grow a column the feed's has not — and since the difference between
- * the two is a `where` clause and not a `select`, the day that happened would be
- * the day a private field reached a cached page.
+ * the paths is a `where` clause and not a `select`, the day that happened would
+ * be the day a private field reached a cached page.
  */
 
 /**
@@ -53,9 +55,30 @@ export const STUDIO_FIELDS = {
   ...POEM_FIELDS,
   body: true,
   status: true,
+  submittedAt: true,
   updatedAt: true,
 } as const;
 
 export type PoemRow = Prisma.PoemGetPayload<{ select: typeof POEM_FIELDS }>;
 export type FullPoemRow = Prisma.PoemGetPayload<{ select: typeof POEM_FIELDS & { body: true } }>;
 export type StudioPoemRow = Prisma.PoemGetPayload<{ select: typeof STUDIO_FIELDS }>;
+
+/**
+ * What `?tag=` and `?author=` mean in SQL — the half of a relation filter that
+ * @moodnight/shared is not allowed to hold, because a Prisma `where` fragment
+ * cannot be imported by the browser bundle.
+ *
+ * Both take slugs and both accept several, which is what makes `?tag=a&tag=b`
+ * "either theme" rather than "both". Either is a plausible reading; OR is the
+ * one a reader browsing themes expects, and AND over a small archive mostly
+ * returns nothing.
+ *
+ * Shared by the public feed and the moderation queue, which declare the same two
+ * filters in @moodnight/shared. One mapping means `?author=vasyl-stus` narrows
+ * by the same column in both, rather than by two fragments that agree until one
+ * of them is changed.
+ */
+export const POEM_RELATIONS: Record<string, RelationFilter<Prisma.PoemWhereInput>> = {
+  tag: (slugs) => ({ tags: { some: { tag: { slug: { in: [...slugs] } } } } }),
+  author: (slugs) => ({ author: { slug: { in: [...slugs] } } }),
+};

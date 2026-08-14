@@ -1,17 +1,17 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@moodnight/db";
+import type { Prisma } from "@moodnight/db";
 import {
   type ListPoemsQuery,
   type Poem,
   poemList,
   type PoemPage,
   type PoemSummary,
-  TEASER_LINES,
 } from "@moodnight/shared";
 
-import { listArgs, type RelationFilter, toPage } from "../common/list-query";
+import { listArgs, toPage } from "../common/list-query";
 import { PrismaService } from "../prisma/prisma.service";
-import { type FullPoemRow, POEM_FIELDS, type PoemRow } from "./poem-fields";
+import { type FullPoemRow, POEM_FIELDS, POEM_RELATIONS, type PoemRow } from "./poem-fields";
+import { toTeaser } from "./poem-mappers";
 
 /**
  * The public read path. Everything here answers anonymous requests, is cached
@@ -40,21 +40,6 @@ const PUBLIC_POEMS = {
 } as const satisfies Prisma.PoemWhereInput;
 
 /**
- * What `?tag=` and `?author=` mean in SQL — the half of a relation filter that
- * @moodnight/shared is not allowed to hold, because a Prisma `where` fragment
- * cannot be imported by the browser bundle.
- *
- * Both take slugs and both accept several, which is what makes `?tag=a&tag=b`
- * "either theme" rather than "both". Either is a plausible reading; OR is the
- * one a reader browsing themes expects, and AND over a small archive mostly
- * returns nothing.
- */
-const POEM_RELATIONS: Record<string, RelationFilter<Prisma.PoemWhereInput>> = {
-  tag: (slugs) => ({ tags: { some: { tag: { slug: { in: [...slugs] } } } } }),
-  author: (slugs) => ({ author: { slug: { in: [...slugs] } } }),
-};
-
-/**
  * The shared half of both mappers: Prisma's `Date`s become ISO strings, and the
  * join rows on `tags` are flattened to the tags themselves.
  *
@@ -75,24 +60,6 @@ function toCore(row: PoemRow) {
     publishedAt: (row.publishedAt ?? row.createdAt).toISOString(),
     readCount: row.readCount,
     featured: row.featured,
-  };
-}
-
-/**
- * The first {@link TEASER_LINES} lines, and whether that was all of them.
- *
- * Cut on lines rather than characters because the unit of a poem is the line:
- * a character cut would end a stanza mid-word and the card would render half a
- * thought. `truncated` is computed here and sent because a client counting the
- * lines it received cannot tell a six-line poem from the first six lines of a
- * long one.
- */
-function toTeaser(body: string): { teaser: string; truncated: boolean } {
-  const lines = body.split("\n");
-
-  return {
-    teaser: lines.slice(0, TEASER_LINES).join("\n"),
-    truncated: lines.length > TEASER_LINES,
   };
 }
 

@@ -20,6 +20,15 @@ import { defineList } from "./list";
  * draft, and a draft has a `status` worth seeing and no publication date at
  * all. Answering a create with a schema that promises `publishedAt` would mean
  * either lying about it or refusing to return the row that was just written.
+ *
+ * **The private read path** — `GET /studio/poems`, `GET /studio/poems/:id` and
+ * `GET /admin/queue`, which repeat the summary/full split one level down:
+ * {@link studioPoemSummarySchema} is a row in a dashboard or a queue and
+ * `studioPoemSchema` is the poem an editor is about to decide on. Six shapes
+ * for one model sounds like a lot until it is written out — they are three
+ * audiences (a reader, an author, an editor) times two densities (a list, a
+ * page), and collapsing any pair of them means one of the six sends a field its
+ * audience should not have.
  */
 
 /**
@@ -191,18 +200,23 @@ export type Poem = z.infer<typeof poemSchema>;
  * Newest first is the default because that is what a feed means. A reader who
  * wants the canon sorts by `readCount`.
  */
+const poemRelationFilters = {
+  tag: z.string().max(80).meta({ description: "A tag's slug. Repeatable.", example: "sakralne" }),
+  author: z
+    .string()
+    .max(120)
+    .meta({ description: "An author's slug. Repeatable.", example: "orysia-vechirnia" }),
+};
+
 export const poemList = defineList({
   item: poemSummarySchema,
   searchable: ["title", "subtitle"],
   sortable: ["publishedAt", "readCount", "title"],
   filterable: ["featured"],
-  related: {
-    tag: z.string().max(80).meta({ description: "A tag's slug. Repeatable.", example: "sakralne" }),
-    author: z
-      .string()
-      .max(120)
-      .meta({ description: "An author's slug. Repeatable.", example: "orysia-vechirnia" }),
-  },
+  // Shared with the moderation queue below rather than written out twice, so
+  // `?author=` narrows by the same key in both places. `filterParam` wraps each
+  // of these in a fresh schema per list, so there is no shared state to leak.
+  related: poemRelationFilters,
   defaultSort: "publishedAt",
   defaultOrder: "desc",
 });
@@ -220,11 +234,14 @@ export const poemPageSchema = poemList.page.meta({
 export type PoemPage = z.infer<typeof poemPageSchema>;
 
 /**
- * A poem as the person who wrote it sees it — the shape `POST /poems` and
- * `PATCH /poems/:id` answer with.
+ * Everything the private half of the site says about a poem, and the base its
+ * two shapes are built from — the same factoring {@link poemCoreSchema} does
+ * for the public half, and for the same reason: the full poem and the row in a
+ * list must differ in exactly one field, and writing them separately is how
+ * they stop doing so.
  *
- * Three differences from {@link poemSchema}, and each of them is why this
- * exists rather than being the same schema:
+ * Four differences from {@link poemSchema}, and each of them is why these exist
+ * rather than being the same schemas:
  *
  * - **`status` is present.** On the read path it is absent because the answer
  *   is always PUBLISHED and a constant field is noise. Here it is the single
@@ -233,6 +250,8 @@ export type PoemPage = z.infer<typeof poemPageSchema>;
  * - **`publishedAt` is nullable, and honestly so.** A draft has never been
  *   published. The read path's non-nullable version is true only because every
  *   query behind it pins the status; nothing pins it here.
+ * - **`submittedAt` is present, and nullable for the same reason.** It is what
+ *   the queue is ordered by and what "waiting since Tuesday" is rendered from.
  * - **`updatedAt` is present.** "Saved just now" is what an editor needs to
  *   see and a reader does not.
  *
@@ -240,20 +259,139 @@ export type PoemPage = z.infer<typeof poemPageSchema>;
  * practice: nothing an author sends sets them, and `featured` is writable only
  * through {@link updatePoemSchema} by an editor.
  */
-export const studioPoemSchema = poemCoreSchema
-  .omit({ publishedAt: true })
+const studioPoemCoreSchema = poemCoreSchema.omit({ publishedAt: true }).extend({
+  status: poemStatusSchema,
+  publishedAt: z.iso.datetime().nullable().meta({
+    description: "When the poem became public, or null if it never has.",
+  }),
+  submittedAt: z.iso
+    .datetime()
+    .nullable()
+    .meta({
+      description:
+        "When the poem last entered the moderation queue, or null if it never " +
+        "has. Not cleared when it leaves — it says when the poem last asked to " +
+        "be read, which stays true afterwards.",
+    }),
+  createdAt: z.iso.datetime().meta({ description: "When the poem was first written." }),
+  updatedAt: z.iso.datetime().meta({ description: "When it was last saved." }),
+});
+
+export const studioPoemSchema = studioPoemCoreSchema
   .extend({
     body: z.string().meta({ description: "The poem, newline-separated." }),
-    status: poemStatusSchema,
-    publishedAt: z.iso.datetime().nullable().meta({
-      description: "When the poem became public, or null if it never has.",
-    }),
-    createdAt: z.iso.datetime().meta({ description: "When the poem was first written." }),
-    updatedAt: z.iso.datetime().meta({ description: "When it was last saved." }),
   })
   .meta({ description: "A poem as its author sees it, drafts included." });
 
 export type StudioPoem = z.infer<typeof studioPoemSchema>;
+
+/**
+ * A poem as a row in the studio's dashboard or the moderation queue — the
+ * private half's answer to {@link poemSummarySchema}, and the same trade.
+ *
+ * The teaser is here instead of the body for the reason the public feed's is:
+ * a page holds twenty of these, a row renders six lines, and sending twenty
+ * whole poems to render a hundred and twenty lines is a cost paid on every
+ * scroll. An editor who is about to decide on a poem asks for it by id and gets
+ * the whole thing; a queue that lists twenty does not need any of them in full.
+ */
+export const studioPoemSummarySchema = studioPoemCoreSchema
+  .extend({
+    teaser: z.string().meta({
+      description: `The first ${TEASER_LINES} lines, newline-separated.`,
+    }),
+    truncated: z.boolean().meta({
+      description: "Whether the poem is longer than the teaser shows.",
+      example: true,
+    }),
+  })
+  .meta({ description: "A poem as a row in the studio or the queue." });
+
+export type StudioPoemSummary = z.infer<typeof studioPoemSummarySchema>;
+
+/**
+ * What `GET /studio/poems` accepts — an author's own work, whatever state it is
+ * in, and the third use of the list framework in ./list.
+ *
+ * The differences from {@link poemList} all follow from one thing: this list is
+ * scoped to the caller by a base constraint on `authorId`, so what is safe to
+ * offer is not the same set.
+ *
+ * - **filterable** — `status`, which the public feed must never offer and this
+ *   one is mostly *about*: "show me my drafts" is the dashboard's main gesture.
+ *   Safe here precisely because the base pins the author, so the widest thing
+ *   the parameter can reach is the caller's own shelf.
+ * - **sortable** — `updatedAt` first among them, and the default. A writer
+ *   returning to the studio is looking for what they were last working on, not
+ *   for what the site last published. `status` is sortable too and orders by
+ *   the Postgres enum's declared order — draft, queued, published, rejected —
+ *   which is the poem's own journey and reads better than alphabetically.
+ * - **related** — nothing. `?author=` would be either redundant or a way to ask
+ *   about somebody else, and `?tag=` is a reader's way of browsing rather than
+ *   a writer's way of finding one of their own dozen poems.
+ */
+export const studioPoemList = defineList({
+  item: studioPoemSummarySchema,
+  searchable: ["title", "subtitle"],
+  sortable: ["updatedAt", "createdAt", "publishedAt", "title", "status"],
+  filterable: ["status"],
+  defaultSort: "updatedAt",
+  defaultOrder: "desc",
+});
+
+/** The query parameters `GET /studio/poems` accepts, parsed. */
+export const listStudioPoemsQuerySchema = studioPoemList.query;
+
+export type ListStudioPoemsQuery = z.infer<typeof listStudioPoemsQuerySchema>;
+
+/**
+ * What `GET /admin/queue` accepts — every poem waiting to be read.
+ *
+ * `status` is deliberately **not** filterable, which is the same statement
+ * {@link poemList} makes and for the same reason: the endpoint pins it to
+ * PENDING_REVIEW through a base constraint, and a filter of the same name would
+ * be a parameter that looks like it could widen the set. The omission is the
+ * boundary.
+ *
+ * Oldest first, and this is the one list on the site that ascends by default. A
+ * queue read newest-first is a queue whose oldest submission is never reached,
+ * and the poem that has waited longest is the one an editor owes an answer to.
+ * `submittedAt` and not `updatedAt` orders it, so an editor fixing a line
+ * before approving does not push the poem to the back of the queue they are
+ * currently reading from.
+ *
+ * `author` and `tag` come from the same declarations the public feed uses, so
+ * "everything Vasyl has waiting" is one parameter rather than a second endpoint.
+ */
+export const poemQueueList = defineList({
+  item: studioPoemSummarySchema,
+  searchable: ["title", "subtitle"],
+  sortable: ["submittedAt", "createdAt", "title"],
+  filterable: [],
+  related: poemRelationFilters,
+  defaultSort: "submittedAt",
+  defaultOrder: "asc",
+});
+
+/** The query parameters `GET /admin/queue` accepts, parsed. */
+export const poemQueueQuerySchema = poemQueueList.query;
+
+export type PoemQueueQuery = z.infer<typeof poemQueueQuerySchema>;
+
+/**
+ * One page of poems as the studio and the queue answer with.
+ *
+ * Both endpoints share this envelope because they answer with the same rows —
+ * what differs between them is which rows, and that is a `where` clause rather
+ * than a shape. Two structurally identical components in the OpenAPI document
+ * would become two identical types in the generated client, and a queue table
+ * and a studio table that cannot be handed the same row renderer.
+ */
+export const studioPoemPageSchema = studioPoemList.page.meta({
+  description: "A page of poems as their author or an editor sees them.",
+});
+
+export type StudioPoemPage = z.infer<typeof studioPoemPageSchema>;
 
 /**
  * The three statuses a client may ask for, out of the four the column holds.
@@ -263,11 +401,16 @@ export type StudioPoem = z.infer<typeof studioPoemSchema>;
  * the author is owed and that nothing here writes. Accepting `status: REJECTED`
  * on a PATCH would let an editor bounce a poem back with no note and no record
  * of who did it, which is precisely the state the `Review` model exists to
- * prevent. Approving and rejecting from the queue is Phase 4's, and it goes
- * through its own endpoint because it writes two rows and not one.
+ * prevent. That is what `POST /poems/:id/reject` is for, below: it writes two
+ * rows in one transaction, and {@link rejectPoemSchema} is why it cannot write
+ * the first without the second.
  *
  * Of the three that are here, only two are an author's to choose — see
  * `assertMaySetStatus` in the API, which is where the ladder is applied.
+ *
+ * PENDING_REVIEW is also how a rejected poem comes back: there is no separate
+ * "resubmit", because sending it to the queue again is the same gesture as
+ * sending it the first time, and the `Review` row stays behind it as history.
  */
 export const writablePoemStatusSchema = z.enum(["DRAFT", "PENDING_REVIEW", "PUBLISHED"]).meta({
   description:
@@ -399,3 +542,69 @@ export const updatePoemSchema = writablePoemFields
   .meta({ description: "The fields to change on a poem. At least one is required." });
 
 export type UpdatePoemInput = z.infer<typeof updatePoemSchema>;
+
+/**
+ * The longest note a moderation decision may carry, matching `Review.note`'s
+ * `VarChar(2000)` in packages/db.
+ *
+ * The column is the limit here rather than a cost argument, which is the
+ * opposite of {@link POEM_BODY_MAX}: a note longer than the column would be a
+ * 500 from Postgres on a request the API had already accepted, so the schema
+ * refusing it first is what turns that into a 400 naming the field.
+ */
+export const REVIEW_NOTE_MAX = 2_000;
+
+/** The note itself, on the two schemas below — trimmed, and never merely spaces. */
+const reviewNoteSchema = z
+  .string()
+  .trim()
+  .min(1, "A note that is empty is not a note. Leave it out instead.")
+  .max(REVIEW_NOTE_MAX);
+
+/**
+ * What a client sends to `POST /poems/:id/approve`.
+ *
+ * The note is optional, which is the whole difference between this schema and
+ * {@link rejectPoemSchema} and the reason there are two of them rather than one
+ * with an `action` field. An approval that says nothing is the ordinary case —
+ * the poem is on the site, which is the message — while a rejection with no
+ * reason is the thing the `Review` table exists to make impossible.
+ *
+ * An empty object is a valid body, so a client that has nothing to add may send
+ * `{}` rather than having to omit the body entirely.
+ */
+export const approvePoemSchema = z
+  .object({
+    note: reviewNoteSchema.optional().meta({
+      description: "A word to the author, kept on the record. Optional on an approval.",
+      example: "Третя строфа тепер тримає весь вірш.",
+    }),
+  })
+  .strict()
+  .meta({ description: "An approval, and optionally why." });
+
+export type ApprovePoemInput = z.infer<typeof approvePoemSchema>;
+
+/**
+ * What a client sends to `POST /poems/:id/reject`.
+ *
+ * The note is **required**, and that is the application half of a promise the
+ * column cannot make: `Review.note` is nullable because an approval rarely
+ * needs words, so "a rejection always carries its reason" has to be enforced
+ * where the decision is made. An author whose poem comes back with no reason
+ * has been told nothing they can act on, and the whole point of keeping the
+ * decision as a row rather than as a status is that it has a reason attached.
+ */
+export const rejectPoemSchema = z
+  .object({
+    note: reviewNoteSchema.meta({
+      description:
+        "Why the poem is coming back, in the author's language. Required — a " +
+        "rejection without a reason is not one.",
+      example: "Гарний початок, але друга строфа обривається раніше за думку.",
+    }),
+  })
+  .strict()
+  .meta({ description: "A rejection, and why." });
+
+export type RejectPoemInput = z.infer<typeof rejectPoemSchema>;

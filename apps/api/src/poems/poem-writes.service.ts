@@ -1,26 +1,30 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
-  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { Prisma } from "@moodnight/db";
 import {
   type Actor,
   type CreatePoemInput,
-  hasRole,
   POEM_TAGS_MAX,
   type StudioPoem,
   type UpdatePoemInput,
-  type UserRole,
-  type WritablePoemStatus,
 } from "@moodnight/shared";
 
 import { slugPrefix, uniqueSlug } from "../common/unique-slug";
 import { PrismaService } from "../prisma/prisma.service";
-import { STUDIO_FIELDS, type StudioPoemRow } from "./poem-fields";
+import {
+  assertMayFeature,
+  assertMayReach,
+  assertMaySetStatus,
+  noSuchPoem,
+  type Ownership,
+  OWNERSHIP_FIELDS,
+} from "./poem-access";
+import { STUDIO_FIELDS } from "./poem-fields";
+import { toStudioPoem } from "./poem-mappers";
 
 /**
  * The write path — creating a poem, changing one, deleting one.
@@ -33,22 +37,25 @@ import { STUDIO_FIELDS, type StudioPoemRow } from "./poem-fields";
  * instead of something the class guarantees, and the read path's safety would
  * then rest on nobody ever calling the wrong helper.
  *
- * So the two paths share their column lists (./poem-fields) and nothing else.
- * This one takes an actor everywhere, is guarded at every route, and answers
- * with {@link StudioPoem} — which carries `status` and a nullable `publishedAt`,
- * because a poem that has just been created has neither a publication date nor
- * any business pretending to.
+ * So the two paths share their column lists (./poem-fields), their mappers
+ * (./poem-mappers) and no code path. This one takes an actor everywhere, is
+ * guarded at every route, and answers with {@link StudioPoem} — which carries
+ * `status` and a nullable `publishedAt`, because a poem that has just been
+ * created has neither a publication date nor any business pretending to.
  *
- * Four rules live here rather than in a schema, because none of them is a fact
- * about a single request in isolation:
+ * Who may do what is ./poem-access, shared with the studio's read path and the
+ * queue so that all three state it once. What is left here is the rules that
+ * are about *this* path only:
  *
  * 1. **A poem belongs to whoever is holding the token.** `authorId` comes from
  *    the actor and there is no field that could carry anything else.
- * 2. **You may write to your own poems; an editor may write to anyone's.**
- * 3. **Publishing is an editor's decision.** An author moves a poem to
- *    PENDING_REVIEW and the queue moves it the rest of the way.
- * 4. **A published poem cannot be deleted where it stands.** Its URL has been
+ * 2. **A published poem cannot be deleted where it stands.** Its URL has been
  *    shared; taking it down is a separate, reversible act.
+ * 3. **Two timestamps are consequences, never inputs.** `publishedAt` is
+ *    stamped the first time a poem goes public and `submittedAt` every time it
+ *    enters the queue, both from the transition rather than from the body —
+ *    two writable fields that have to agree is one more thing that can
+ *    disagree.
  */
 
 /** Prisma's code for "a unique constraint rejected this write". */
@@ -70,103 +77,12 @@ const FOREIGN_KEY_VIOLATION = "P2003";
  */
 const SLUG_FALLBACK = "poem";
 
-/** The lowest role that may publish, feature, or touch somebody else's poem. */
-const MODERATOR: UserRole = "EDITOR";
-
-/** The columns the authorisation rules need, and nothing else. */
-const OWNERSHIP_FIELDS = {
-  authorId: true,
-  status: true,
-  publishedAt: true,
-} as const;
-
-type Ownership = Prisma.PoemGetPayload<{ select: typeof OWNERSHIP_FIELDS }>;
-
 /** Narrow enough to act on: a Prisma failure, and the specific one expected. */
 function isPrismaError(
   error: unknown,
   code: string,
 ): error is Prisma.PrismaClientKnownRequestError {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code;
-}
-
-/** One answer to "no row has that id", shared by the two routes that take one. */
-function noSuchPoem(id: string): NotFoundException {
-  return new NotFoundException(`No poem with id ${id}.`);
-}
-
-/**
- * Rule 2: your own poems, or anybody's if you moderate.
- *
- * A 403 and not a 404, which is the opposite of the choice the public read path
- * makes — and for the opposite reason. There, the caller is a stranger and
- * "you may not see this one" would confirm a poem exists for somebody guessing
- * slugs. Here the caller has signed in and typed an id they got from
- * somewhere; telling them the poem is not theirs is the only answer that lets
- * them work out what went wrong.
- */
-function assertMayWrite(actor: Actor, poem: Ownership): void {
-  if (actor.id === poem.authorId || hasRole(actor.role, MODERATOR)) {
-    return;
-  }
-
-  throw new ForbiddenException("This poem belongs to somebody else.");
-}
-
-/**
- * Rule 3: an author submits, an editor publishes.
- *
- * The gap this closes is the whole point of having a queue. Without it every
- * author could put their own work on the front page, and `PENDING_REVIEW` would
- * be a status nobody had a reason to choose.
- *
- * DRAFT and PENDING_REVIEW are open to anyone — on their own poem, which
- * {@link assertMayWrite} is what enforces. Unpublishing is `status: DRAFT` and
- * therefore an editor's too, by rule 2 rather than by this one: it is somebody
- * else's poem, so an author cannot reach it, and its own author taking it back
- * down is a thing they are allowed to do.
- */
-function assertMaySetStatus(role: UserRole, status: WritablePoemStatus | undefined): void {
-  if (status === "PUBLISHED" && !hasRole(role, MODERATOR)) {
-    throw new ForbiddenException(
-      "Publishing is an editor's decision. Send status PENDING_REVIEW to put the poem in " +
-        "the queue instead.",
-    );
-  }
-}
-
-/** The front page is editorial, so who may set `featured` is the same question. */
-function assertMayFeature(role: UserRole, featured: boolean | undefined): void {
-  if (featured !== undefined && !hasRole(role, MODERATOR)) {
-    throw new ForbiddenException("Only an editor decides what sits on the front page.");
-  }
-}
-
-/**
- * A row as the studio wants it: Prisma's `Date`s as ISO strings, and the join
- * rows on `tags` flattened to the tags themselves.
- *
- * `publishedAt` passes through as `null` rather than being coalesced to
- * `createdAt` the way the read path's mapper does. There the fallback covers a
- * case that cannot arrive; here the null is the ordinary state of every draft
- * and inventing a date for it would be a lie the studio then renders.
- */
-function toStudioPoem(row: StudioPoemRow): StudioPoem {
-  return {
-    id: row.id,
-    slug: row.slug,
-    title: row.title,
-    subtitle: row.subtitle,
-    body: row.body,
-    status: row.status,
-    author: row.author,
-    tags: row.tags.map(({ tag }) => tag),
-    publishedAt: row.publishedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    readCount: row.readCount,
-    featured: row.featured,
-  };
 }
 
 @Injectable()
@@ -201,6 +117,10 @@ export class PoemWritesService {
           // published and invisible: the feed's constraint is `status` *and*
           // `publishedAt: { not: null }`, and both have to hold.
           ...(input.status === "PUBLISHED" ? { publishedAt: new Date() } : {}),
+          // The same argument one status along: a poem written straight into
+          // the queue has to carry the date the queue orders by, or it sorts
+          // against a null and an editor never reaches it.
+          ...(input.status === "PENDING_REVIEW" ? { submittedAt: new Date() } : {}),
           ...(tagIds.length > 0 ? { tags: { create: tagIds.map((tagId) => ({ tagId })) } } : {}),
         },
         select: STUDIO_FIELDS,
@@ -238,7 +158,7 @@ export class PoemWritesService {
   async update(id: string, patch: UpdatePoemInput, actor: Actor): Promise<StudioPoem> {
     const current = await this.ownershipOf(id);
 
-    assertMayWrite(actor, current);
+    assertMayReach(actor, current);
     assertMaySetStatus(actor.role, patch.status);
     assertMayFeature(actor.role, patch.featured);
 
@@ -256,6 +176,17 @@ export class PoemWritesService {
           // did this become public", and that is still the first time.
           ...(patch.status === "PUBLISHED" && current.publishedAt === null
             ? { publishedAt: new Date() }
+            : {}),
+          // Stamped on every *entry* into the queue, which is the opposite rule
+          // to `publishedAt` above and deliberately so. A rejected poem
+          // resubmitted in August has waited since August, not since March, so
+          // this is the last submission and not the first. The guard is on the
+          // transition rather than on the value: a poem already in the queue
+          // that is patched again — an editor fixing a line before approving —
+          // keeps its place, which is the whole reason this column exists
+          // instead of the queue being ordered by `updatedAt`.
+          ...(patch.status === "PENDING_REVIEW" && current.status !== "PENDING_REVIEW"
+            ? { submittedAt: new Date() }
             : {}),
           // Replaced wholesale rather than diffed. The join rows carry nothing
           // but the pair, so there is no state in them worth preserving, and a
@@ -298,7 +229,7 @@ export class PoemWritesService {
   async remove(id: string, actor: Actor): Promise<void> {
     const current = await this.ownershipOf(id);
 
-    assertMayWrite(actor, current);
+    assertMayReach(actor, current);
 
     if (current.status === "PUBLISHED") {
       throw new ConflictException(

@@ -28,7 +28,7 @@ import "dotenv/config";
 
 import { hash } from "@node-rs/argon2";
 
-import { createPrismaClient, PoemStatus, type Prisma, UserRole } from "./index";
+import { createPrismaClient, PoemStatus, type Prisma, ReviewAction, UserRole } from "./index";
 
 /**
  * The password every seeded account shares, so signing in as any role during
@@ -180,7 +180,7 @@ const TAGS = [
 
 /**
  * The three poems from the prototype's data.jsx, which the roadmap names as
- * this seed's source, plus two that exist only to prove a boundary.
+ * this seed's source, plus three that exist only to prove a boundary.
  *
  * The attribution differs from the prototype — those poems were credited to
  * three invented poets and these are attached to the accounts above — because a
@@ -189,8 +189,17 @@ const TAGS = [
  *
  * `DRAFT` and `PENDING_REVIEW` are here deliberately and are the most useful
  * rows in the list: they are what makes it visible, locally and without a test,
- * that `GET /poems` answers with three poems and not five. A seed of only
+ * that `GET /poems` answers with three poems and not six. A seed of only
  * published work would let the base constraint break silently.
+ *
+ * `REJECTED` is here for the same reason one step further along: it is the only
+ * status a client cannot set, so a poem that holds it is proof that the queue's
+ * own endpoint wrote it — and it gives `/studio/poems` all four statuses to
+ * render before anybody has moderated anything.
+ *
+ * `submittedDaysAgo` is what `/admin/queue` orders by, and it is deliberately
+ * not the same number as `publishedDaysAgo`: a poem waits before it is read.
+ * Only the two poems that have been through the queue carry a review below.
  */
 const POEMS: {
   slug: string;
@@ -201,6 +210,7 @@ const POEMS: {
   featured: boolean;
   readCount: number;
   publishedDaysAgo: number | null;
+  submittedDaysAgo: number | null;
   tagSlugs: string[];
   body: string;
 }[] = [
@@ -213,6 +223,7 @@ const POEMS: {
     featured: true,
     readCount: 1247,
     publishedDaysAgo: 2,
+    submittedDaysAgo: 4,
     tagSlugs: ["melankholiia", "nich"],
     body: `Над полем, де згорів останній сніп,
 Вітри колишуть попіл і мовчання.
@@ -233,6 +244,7 @@ const POEMS: {
     featured: false,
     readCount: 893,
     publishedDaysAgo: 9,
+    submittedDaysAgo: 12,
     tagSlugs: ["baladnyi-tsykl"],
     body: `Княже мій, що спиш під каменем зимним,
 Серце твоє стало холодним, як ніж.
@@ -253,6 +265,7 @@ const POEMS: {
     featured: false,
     readCount: 2156,
     publishedDaysAgo: 21,
+    submittedDaysAgo: 23,
     tagSlugs: ["sakralne", "melankholiia"],
     body: `Ми — ті, кого не назвали,
 Кого не вписали у списки.
@@ -273,6 +286,7 @@ const POEMS: {
     featured: false,
     readCount: 0,
     publishedDaysAgo: null,
+    submittedDaysAgo: null,
     tagSlugs: [],
     body: `Тут мало бути ще два рядки,
 але вечір скінчився раніше.`,
@@ -286,9 +300,52 @@ const POEMS: {
     featured: false,
     readCount: 0,
     publishedDaysAgo: null,
+    submittedDaysAgo: 3,
     tagSlugs: ["nich"],
     body: `Свіча горить, а лист іще не дописаний.
 Хтось прочитає — може, завтра, може, ніколи.`,
+  },
+  {
+    slug: "pivdorohy",
+    title: "Півдороги",
+    subtitle: null,
+    authorEmail: "author@moodnight.dev",
+    status: PoemStatus.REJECTED,
+    featured: false,
+    readCount: 0,
+    publishedDaysAgo: null,
+    // Kept, not cleared, on the way out of the queue: the column says when the
+    // poem last asked to be read, and it did ask.
+    submittedDaysAgo: 6,
+    tagSlugs: ["melankholiia"],
+    body: `Я дійшов до середини ночі
+і забув, по що виходив.`,
+  },
+];
+
+/**
+ * The moderation decisions the queue would have written, keyed by the poem they
+ * were made on.
+ *
+ * Only the two poems that have actually been through the queue carry one. The
+ * three published poems predate it — inventing an approval for them would put a
+ * reviewer's name against a decision nobody made, which is the one thing an
+ * audit trail must not contain.
+ *
+ * The note is required on a rejection and absent on an approval, which is the
+ * rule the API enforces and the shape a developer should see in the table.
+ */
+const REVIEWS: {
+  poemSlug: string;
+  reviewerEmail: string;
+  action: ReviewAction;
+  note: string | null;
+}[] = [
+  {
+    poemSlug: "pivdorohy",
+    reviewerEmail: "editor@moodnight.dev",
+    action: ReviewAction.REJECT,
+    note: "Гарний початок, але друга строфа обривається раніше за думку. Допишіть — і надсилайте знову.",
   },
 ];
 
@@ -353,8 +410,13 @@ async function seed(): Promise<void> {
       tagIds.set(tag.slug, saved.id);
     }
 
+    // Keyed by slug for the same reason `authorIds` is keyed by email: the
+    // reviews below name the poem they were made on, and the ids are only
+    // known once the upserts above have run.
+    const poemIds = new Map<string, string>();
+
     for (const poem of POEMS) {
-      const { authorEmail, publishedDaysAgo, tagSlugs, ...fields } = poem;
+      const { authorEmail, publishedDaysAgo, submittedDaysAgo, tagSlugs, ...fields } = poem;
       const authorId = authorIds.get(authorEmail);
 
       // The seed's own referential check. A typo in `authorEmail` would
@@ -368,6 +430,7 @@ async function seed(): Promise<void> {
         ...fields,
         authorId,
         publishedAt: publishedDaysAgo === null ? null : daysAgo(publishedDaysAgo),
+        submittedAt: submittedDaysAgo === null ? null : daysAgo(submittedDaysAgo),
       };
 
       const saved = await prisma.poem.upsert({
@@ -376,6 +439,8 @@ async function seed(): Promise<void> {
         create: row,
         select: { id: true },
       });
+
+      poemIds.set(poem.slug, saved.id);
 
       const links = tagSlugs.map((slug) => {
         const tagId = tagIds.get(slug);
@@ -394,12 +459,37 @@ async function seed(): Promise<void> {
       await prisma.poemTag.createMany({ data: links });
     }
 
+    for (const review of REVIEWS) {
+      const { poemSlug, reviewerEmail, ...fields } = review;
+      const poemId = poemIds.get(poemSlug);
+      const reviewerId = authorIds.get(reviewerEmail);
+
+      if (!poemId) {
+        throw new Error(`A review names a poem nobody seeded: ${poemSlug}.`);
+      }
+
+      if (!reviewerId) {
+        throw new Error(
+          `A review of "${poemSlug}" names a reviewer nobody seeded: ${reviewerEmail}.`,
+        );
+      }
+
+      // Rewritten per poem rather than upserted, for the reason the tag links
+      // are: a `Review` has no natural unique key — the whole point of the table
+      // is that one poem may collect several decisions — so there is nothing to
+      // key an upsert on, and a plain `create` would add a duplicate row on
+      // every run.
+      await prisma.review.deleteMany({ where: { poemId } });
+      await prisma.review.create({ data: { ...fields, poemId, reviewerId } });
+    }
+
     const published = POEMS.filter((poem) => poem.status === PoemStatus.PUBLISHED).length;
 
     console.log(
-      `Seeded ${USERS.length} users, ${TAGS.length} tags and ${POEMS.length} poems ` +
-        `(${published} published — the rest are a draft and one awaiting review, ` +
-        "so GET /poems should answer with the published count and no more).\n" +
+      `Seeded ${USERS.length} users, ${TAGS.length} tags, ${POEMS.length} poems ` +
+        `and ${REVIEWS.length} moderation decision(s) ` +
+        `(${published} poems published — the rest are a draft, one awaiting review and ` +
+        "one rejected, so GET /poems should answer with the published count and no more).\n" +
         `Password for every account: ${DEV_PASSWORD}`,
     );
   } finally {

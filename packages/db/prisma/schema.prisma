@@ -229,6 +229,21 @@ model Poem {
   /// and approved in August belongs at August's end of the feed.
   publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
 
+  /// When the poem last entered PENDING_REVIEW — what `/admin/queue` orders by.
+  ///
+  /// A column of its own rather than a reading of `updated_at`, and the queue is
+  /// why: an editor is expected to fix a line before approving, and every one of
+  /// those edits would push the poem to the back of the queue it is already
+  /// being read from. This moves only on the transition into the queue, so a
+  /// poem's place in it is the moment its author asked, not the moment anybody
+  /// last touched it.
+  ///
+  /// Never cleared. It answers "when did this last ask to be read", which stays
+  /// true after the poem leaves the queue — and a re-submitted poem restamps it,
+  /// so it is the *last* request and not the first. Null until a poem is first
+  /// submitted, which is the ordinary state of every draft.
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz(3)
+
   /// Whether an editor has put this poem on the front page — the manual
   /// override over the home page's otherwise automatic sections.
   ///
@@ -261,6 +276,10 @@ model Poem {
   @@index([status, publishedAt(sort: Desc)])
   /// `/author/[slug]`, which is the same page narrowed by one more column.
   @@index([authorId, status, publishedAt(sort: Desc)])
+  /// The moderation queue, in the same shape as the feed's index and for the
+  /// same reason: one equality column, then the one it is ordered by. Ascending
+  /// here rather than descending, because a queue is read oldest first.
+  @@index([status, submittedAt])
   @@map("poems")
 }
 

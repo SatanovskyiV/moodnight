@@ -122,6 +122,9 @@ export const POEM_ID = "0192f5a2-1e4d-7c5f-b061-3c4d5e6f7081";
 /** Fixed, so a spec can name the exact ISO string a poem's `publishedAt` becomes. */
 const PUBLISHED_AT = new Date("2026-03-04T05:06:07.000Z");
 
+/** Fixed, so a spec can name the exact ISO string a poem's `submittedAt` becomes. */
+const SUBMITTED_AT = new Date("2026-02-28T09:10:11.000Z");
+
 export interface PoemRowFixture {
   id: string;
   slug: string;
@@ -185,14 +188,47 @@ export function studioPoemRow(overrides: Partial<StudioPoemRowFixture> = {}) {
   return {
     ...poemRow(),
     status: "PUBLISHED" as const,
+    submittedAt: SUBMITTED_AT as Date | null,
     updatedAt: UPDATED_AT,
+    authorId: USER_ID,
     ...overrides,
   };
 }
 
 export interface StudioPoemRowFixture extends PoemRowFixture {
   status: "DRAFT" | "PENDING_REVIEW" | "PUBLISHED" | "REJECTED";
+  submittedAt: Date | null;
   updatedAt: Date;
+  /**
+   * Selected only by `PoemStudioService.findById`, which needs it to ask whether
+   * the caller may reach this poem — `STUDIO_FIELDS` alone does not include it,
+   * because it is not on the wire.
+   *
+   * Present on every row this helper builds rather than on a sixth fixture, and
+   * harmless where it is not selected: a stub that returns one more column than
+   * the query asked for is what a real client does too, since the mapper picks
+   * its fields by name. Defaults to {@link USER_ID}, the account the auth
+   * harness mints its tokens for, so the ordinary case is "this poem is mine".
+   */
+  authorId: string;
+}
+
+/**
+ * A poem as the moderation queue holds it: waiting, never published, and with a
+ * submission date to be ordered by.
+ *
+ * Its own helper rather than `studioPoemRow({ status: "PENDING_REVIEW" })` at
+ * every call site, because the three fields have to agree — a PENDING_REVIEW row
+ * carrying a `publishedAt` is a state the application cannot produce, and a spec
+ * built on one would prove nothing about the code that runs.
+ */
+export function queuedPoemRow(overrides: Partial<StudioPoemRowFixture> = {}) {
+  return studioPoemRow({
+    status: "PENDING_REVIEW",
+    publishedAt: null,
+    submittedAt: SUBMITTED_AT,
+    ...overrides,
+  });
 }
 
 /**
@@ -221,6 +257,9 @@ export function ownershipRow(
 
 /** A tag as `resolveTags` selects it: the id it needs and the slug it checks. */
 export const TAG_ID = "0192f5a3-2f5e-7d60-b172-4d5e6f708192";
+
+/** The id a stubbed `Review` insert comes back with. Nothing reads it; the row does. */
+export const REVIEW_ID = "0192f5a4-3061-7e71-8283-5e6f70819203";
 
 export function tagRow(overrides: Partial<{ id: string; slug: string }> = {}) {
   return { id: TAG_ID, slug: "melankholiia", ...overrides };
@@ -273,6 +312,26 @@ export function createPrismaMock() {
       // fails on the 400 it would really get rather than on `undefined.length`.
       findMany: vi.fn().mockResolvedValue([]),
     },
+    review: {
+      // Written by the queue's two decisions and by nothing else. `deleteMany`
+      // is the seed's, not the API's, and is absent for the reason the note
+      // above gives: a delegate that appears here is one the application calls.
+      create: vi.fn().mockResolvedValue({ id: REVIEW_ID }),
+    },
+    /**
+     * The array form, which is the only one the application uses.
+     *
+     * `Promise.all` is a faithful enough stand-in for what a spec can observe:
+     * the real thing runs the operations in one database transaction, and every
+     * delegate above already returns a settled promise, so the results arrive in
+     * order and a rejection from either operation rejects the whole call. What
+     * this cannot reproduce is the rollback — the other operation's mock has
+     * already "succeeded" — so a spec asserting that a failed decision wrote no
+     * `Review` is asserting against the fake rather than against Postgres. That
+     * half belongs to a test with a real database, which this file's own note
+     * explains the absence of.
+     */
+    $transaction: vi.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
   };
 }
 

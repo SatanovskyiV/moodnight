@@ -25,7 +25,19 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { CreatePoem, ListPoemsParams, Poem, PoemPage, StudioPoem, UpdatePoem } from "./model";
+import type {
+  ApprovePoem,
+  CreatePoem,
+  ListPoemQueueParams,
+  ListPoemsParams,
+  ListStudioPoemsParams,
+  Poem,
+  PoemPage,
+  RejectPoem,
+  StudioPoem,
+  StudioPoemPage,
+  UpdatePoem,
+} from "./model";
 
 import { request } from "../request";
 
@@ -844,4 +856,763 @@ export const useDeletePoem = <TError = void, TContext = unknown>(
   queryClient?: QueryClient,
 ): UseMutationResult<Awaited<ReturnType<typeof deletePoem>>, TError, { id: string }, TContext> => {
   return useMutation(getDeletePoemMutationOptions(options), queryClient);
+};
+export type listStudioPoemsResponse200 = {
+  data: StudioPoemPage;
+  status: 200;
+};
+
+export type listStudioPoemsResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type listStudioPoemsResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type listStudioPoemsResponseSuccess = listStudioPoemsResponse200 & {
+  headers: Headers;
+};
+export type listStudioPoemsResponseError = (
+  listStudioPoemsResponse400 | listStudioPoemsResponse401
+) & {
+  headers: Headers;
+};
+
+export type listStudioPoemsResponse = listStudioPoemsResponseSuccess | listStudioPoemsResponseError;
+
+export const getListStudioPoemsUrl = (params?: ListStudioPoemsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["status"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : String(v));
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/studio/poems?${stringifiedParams}` : `/studio/poems`;
+};
+
+/**
+ * One page of the poems belonging to the account making the request, most recently saved first. Drafts, poems waiting in the queue, poems published and poems sent back — every state, which is what `GET /poems` cannot answer because it is pinned to the published ones.
+ *
+ * The author is not a parameter and cannot be one: it is the token. There is no query that reaches another account's drafts, which is why `status` is safe to filter on here and absent from the public feed.
+ *
+ * `?status=DRAFT&status=REJECTED` accepts several. `search` matches title and subtitle, case-insensitively, and every whitespace-separated term has to match one of them. `?sort=status` orders by the poem's journey — draft, queued, published, rejected — because that is the order the Postgres enum declares.
+ *
+ * Rows carry the first few lines rather than the whole poem. Ask for one by id to read it in full.
+ * @summary List my poems
+ */
+export const listStudioPoems = async (
+  params?: ListStudioPoemsParams,
+  options?: Parameters<typeof request>[1],
+): Promise<listStudioPoemsResponse> => {
+  return request<listStudioPoemsResponse>(getListStudioPoemsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListStudioPoemsQueryKey = (params?: ListStudioPoemsParams) => {
+  return [`/studio/poems`, ...(params ? [params] : [])] as const;
+};
+
+export const getListStudioPoemsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStudioPoems>>,
+  TError = void,
+>(
+  params?: ListStudioPoemsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStudioPoems>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListStudioPoemsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listStudioPoems>>> = ({ signal }) =>
+    listStudioPoems(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStudioPoems>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListStudioPoemsQueryResult = NonNullable<Awaited<ReturnType<typeof listStudioPoems>>>;
+export type ListStudioPoemsQueryError = void;
+
+export function useListStudioPoems<
+  TData = Awaited<ReturnType<typeof listStudioPoems>>,
+  TError = void,
+>(
+  params: undefined | ListStudioPoemsParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStudioPoems>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStudioPoems>>,
+          TError,
+          Awaited<ReturnType<typeof listStudioPoems>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListStudioPoems<
+  TData = Awaited<ReturnType<typeof listStudioPoems>>,
+  TError = void,
+>(
+  params?: ListStudioPoemsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStudioPoems>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStudioPoems>>,
+          TError,
+          Awaited<ReturnType<typeof listStudioPoems>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListStudioPoems<
+  TData = Awaited<ReturnType<typeof listStudioPoems>>,
+  TError = void,
+>(
+  params?: ListStudioPoemsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStudioPoems>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List my poems
+ */
+
+export function useListStudioPoems<
+  TData = Awaited<ReturnType<typeof listStudioPoems>>,
+  TError = void,
+>(
+  params?: ListStudioPoemsParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStudioPoems>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListStudioPoemsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type getStudioPoemResponse200 = {
+  data: StudioPoem;
+  status: 200;
+};
+
+export type getStudioPoemResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type getStudioPoemResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type getStudioPoemResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type getStudioPoemResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type getStudioPoemResponseSuccess = getStudioPoemResponse200 & {
+  headers: Headers;
+};
+export type getStudioPoemResponseError = (
+  | getStudioPoemResponse400
+  | getStudioPoemResponse401
+  | getStudioPoemResponse403
+  | getStudioPoemResponse404
+) & {
+  headers: Headers;
+};
+
+export type getStudioPoemResponse = getStudioPoemResponseSuccess | getStudioPoemResponseError;
+
+export const getGetStudioPoemUrl = (id: string) => {
+  return `/studio/poems/${id}`;
+};
+
+/**
+ * The whole poem, whatever state it is in — the text, its status, when it was submitted and when it was last saved.
+ *
+ * An author may read their own poems; an editor may read anybody's, which is what makes reviewing possible: a decision taken on six lines of teaser is not a review, and the `PATCH /poems/{id}` that fixes a line before approving needs the text it is fixing. Somebody else's poem is a 403 for an author, not a 404 — the caller has signed in and typed an id they got from somewhere, and being told it is not theirs is the only answer they can act on.
+ *
+ * By id rather than slug, like the write routes and unlike `GET /poems/{slug}`: the slug is the poem's public address, and this is the studio's key — it exists before a slug is settled and survives the poem being retitled.
+ * @summary Read one poem, in full
+ */
+export const getStudioPoem = async (
+  id: string,
+  options?: Parameters<typeof request>[1],
+): Promise<getStudioPoemResponse> => {
+  return request<getStudioPoemResponse>(getGetStudioPoemUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStudioPoemQueryKey = (id: string) => {
+  return [`/studio/poems/${id}`] as const;
+};
+
+export const getGetStudioPoemQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStudioPoem>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getStudioPoem>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStudioPoemQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getStudioPoem>>> = ({ signal }) =>
+    getStudioPoem(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getStudioPoem>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetStudioPoemQueryResult = NonNullable<Awaited<ReturnType<typeof getStudioPoem>>>;
+export type GetStudioPoemQueryError = void;
+
+export function useGetStudioPoem<TData = Awaited<ReturnType<typeof getStudioPoem>>, TError = void>(
+  id: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getStudioPoem>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getStudioPoem>>,
+          TError,
+          Awaited<ReturnType<typeof getStudioPoem>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetStudioPoem<TData = Awaited<ReturnType<typeof getStudioPoem>>, TError = void>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getStudioPoem>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getStudioPoem>>,
+          TError,
+          Awaited<ReturnType<typeof getStudioPoem>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetStudioPoem<TData = Awaited<ReturnType<typeof getStudioPoem>>, TError = void>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getStudioPoem>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Read one poem, in full
+ */
+
+export function useGetStudioPoem<TData = Awaited<ReturnType<typeof getStudioPoem>>, TError = void>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getStudioPoem>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetStudioPoemQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type listPoemQueueResponse200 = {
+  data: StudioPoemPage;
+  status: 200;
+};
+
+export type listPoemQueueResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type listPoemQueueResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type listPoemQueueResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type listPoemQueueResponseSuccess = listPoemQueueResponse200 & {
+  headers: Headers;
+};
+export type listPoemQueueResponseError = (
+  listPoemQueueResponse400 | listPoemQueueResponse401 | listPoemQueueResponse403
+) & {
+  headers: Headers;
+};
+
+export type listPoemQueueResponse = listPoemQueueResponseSuccess | listPoemQueueResponseError;
+
+export const getListPoemQueueUrl = (params?: ListPoemQueueParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["tag", "author"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? "null" : String(v));
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/admin/queue?${stringifiedParams}` : `/admin/queue`;
+};
+
+/**
+ * Every poem in PENDING_REVIEW, oldest submission first. For editors and above.
+ *
+ * **The only list on this API that ascends by default**, because that is what a queue is: read newest-first, the poem that has waited longest is the one nobody ever reaches. It is ordered by when the poem entered the queue and not by when it was last saved, so an editor who fixes a line before approving does not push it to the back of the queue they are working through.
+ *
+ * There is no `status` parameter and cannot be one: the endpoint *is* the status. `author` and `tag` take slugs and may be repeated — `?author=vasyl-stus` is everything one poet has waiting.
+ *
+ * Rows carry the first few lines. Read a poem in full at `GET /studio/poems/{id}`, which an editor may do for anybody's poem, and decide on it at `POST /poems/{id}/approve` or `/reject`.
+ * @summary List poems waiting for review
+ */
+export const listPoemQueue = async (
+  params?: ListPoemQueueParams,
+  options?: Parameters<typeof request>[1],
+): Promise<listPoemQueueResponse> => {
+  return request<listPoemQueueResponse>(getListPoemQueueUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPoemQueueQueryKey = (params?: ListPoemQueueParams) => {
+  return [`/admin/queue`, ...(params ? [params] : [])] as const;
+};
+
+export const getListPoemQueueQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPoemQueue>>,
+  TError = void,
+>(
+  params?: ListPoemQueueParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemQueue>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPoemQueueQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listPoemQueue>>> = ({ signal }) =>
+    listPoemQueue(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPoemQueue>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListPoemQueueQueryResult = NonNullable<Awaited<ReturnType<typeof listPoemQueue>>>;
+export type ListPoemQueueQueryError = void;
+
+export function useListPoemQueue<TData = Awaited<ReturnType<typeof listPoemQueue>>, TError = void>(
+  params: undefined | ListPoemQueueParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemQueue>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPoemQueue>>,
+          TError,
+          Awaited<ReturnType<typeof listPoemQueue>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListPoemQueue<TData = Awaited<ReturnType<typeof listPoemQueue>>, TError = void>(
+  params?: ListPoemQueueParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemQueue>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPoemQueue>>,
+          TError,
+          Awaited<ReturnType<typeof listPoemQueue>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListPoemQueue<TData = Awaited<ReturnType<typeof listPoemQueue>>, TError = void>(
+  params?: ListPoemQueueParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemQueue>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary List poems waiting for review
+ */
+
+export function useListPoemQueue<TData = Awaited<ReturnType<typeof listPoemQueue>>, TError = void>(
+  params?: ListPoemQueueParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemQueue>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListPoemQueueQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type approvePoemResponse200 = {
+  data: StudioPoem;
+  status: 200;
+};
+
+export type approvePoemResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type approvePoemResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type approvePoemResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type approvePoemResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type approvePoemResponse409 = {
+  data: void;
+  status: 409;
+};
+
+export type approvePoemResponseSuccess = approvePoemResponse200 & {
+  headers: Headers;
+};
+export type approvePoemResponseError = (
+  | approvePoemResponse400
+  | approvePoemResponse401
+  | approvePoemResponse403
+  | approvePoemResponse404
+  | approvePoemResponse409
+) & {
+  headers: Headers;
+};
+
+export type approvePoemResponse = approvePoemResponseSuccess | approvePoemResponseError;
+
+export const getApprovePoemUrl = (id: string) => {
+  return `/poems/${id}/approve`;
+};
+
+/**
+ * Publishes a poem waiting in the queue and records the decision. For editors and above.
+ *
+ * Two rows are written in one transaction — the poem's new status and a `Review` naming who decided — so a poem cannot become public without a record of why it did.
+ *
+ * The note is optional here and required on a rejection: an approval that says nothing has already said the only thing that matters, which is that the poem is on the site.
+ *
+ * `publishedAt` is stamped only if the poem has never held one. A poem taken down, revised and approved again keeps its place in the feed rather than jumping to the top as though it were new.
+ *
+ * Only a PENDING_REVIEW poem can be approved — anything else is a 409, including a poem another editor decided on a moment earlier.
+ * @summary Approve a poem
+ */
+export const approvePoem = async (
+  id: string,
+  approvePoem: ApprovePoem,
+  options?: Parameters<typeof request>[1],
+): Promise<approvePoemResponse> => {
+  return request<approvePoemResponse>(getApprovePoemUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(approvePoem),
+  });
+};
+
+export const getApprovePoemMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approvePoem>>,
+    TError,
+    { id: string; data: ApprovePoem },
+    TContext
+  >;
+  request?: SecondParameter<typeof request>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approvePoem>>,
+  TError,
+  { id: string; data: ApprovePoem },
+  TContext
+> => {
+  const mutationKey = ["approvePoem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approvePoem>>,
+    { id: string; data: ApprovePoem }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return approvePoem(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApprovePoemMutationResult = NonNullable<Awaited<ReturnType<typeof approvePoem>>>;
+export type ApprovePoemMutationBody = ApprovePoem;
+export type ApprovePoemMutationError = void;
+
+/**
+ * @summary Approve a poem
+ */
+export const useApprovePoem = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof approvePoem>>,
+      TError,
+      { id: string; data: ApprovePoem },
+      TContext
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof approvePoem>>,
+  TError,
+  { id: string; data: ApprovePoem },
+  TContext
+> => {
+  return useMutation(getApprovePoemMutationOptions(options), queryClient);
+};
+export type rejectPoemResponse200 = {
+  data: StudioPoem;
+  status: 200;
+};
+
+export type rejectPoemResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type rejectPoemResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type rejectPoemResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type rejectPoemResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type rejectPoemResponse409 = {
+  data: void;
+  status: 409;
+};
+
+export type rejectPoemResponseSuccess = rejectPoemResponse200 & {
+  headers: Headers;
+};
+export type rejectPoemResponseError = (
+  | rejectPoemResponse400
+  | rejectPoemResponse401
+  | rejectPoemResponse403
+  | rejectPoemResponse404
+  | rejectPoemResponse409
+) & {
+  headers: Headers;
+};
+
+export type rejectPoemResponse = rejectPoemResponseSuccess | rejectPoemResponseError;
+
+export const getRejectPoemUrl = (id: string) => {
+  return `/poems/${id}/reject`;
+};
+
+/**
+ * Returns a poem waiting in the queue to its author, with the reason attached. For editors and above.
+ *
+ * **The note is required**, and that is the whole reason rejecting is an endpoint rather than `PATCH status: REJECTED` — which the API does not accept and never will. A rejection is not a field: it is a decision with a reason, and an author sent their poem back with no reason has been told nothing they can act on. The status and the `Review` carrying the note are written in one transaction, so neither can exist without the other.
+ *
+ * Nothing is destroyed. The author can revise and send the poem back to the queue with `PATCH status: PENDING_REVIEW`, which restamps how long it has been waiting; the decision stays on the record either way.
+ *
+ * Only a PENDING_REVIEW poem can be sent back — anything else is a 409.
+ * @summary Send a poem back
+ */
+export const rejectPoem = async (
+  id: string,
+  rejectPoem: RejectPoem,
+  options?: Parameters<typeof request>[1],
+): Promise<rejectPoemResponse> => {
+  return request<rejectPoemResponse>(getRejectPoemUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(rejectPoem),
+  });
+};
+
+export const getRejectPoemMutationOptions = <TError = void, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectPoem>>,
+    TError,
+    { id: string; data: RejectPoem },
+    TContext
+  >;
+  request?: SecondParameter<typeof request>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectPoem>>,
+  TError,
+  { id: string; data: RejectPoem },
+  TContext
+> => {
+  const mutationKey = ["rejectPoem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectPoem>>,
+    { id: string; data: RejectPoem }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return rejectPoem(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectPoemMutationResult = NonNullable<Awaited<ReturnType<typeof rejectPoem>>>;
+export type RejectPoemMutationBody = RejectPoem;
+export type RejectPoemMutationError = void;
+
+/**
+ * @summary Send a poem back
+ */
+export const useRejectPoem = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof rejectPoem>>,
+      TError,
+      { id: string; data: RejectPoem },
+      TContext
+    >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof rejectPoem>>,
+  TError,
+  { id: string; data: RejectPoem },
+  TContext
+> => {
+  return useMutation(getRejectPoemMutationOptions(options), queryClient);
 };

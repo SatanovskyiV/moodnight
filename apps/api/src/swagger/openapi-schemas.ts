@@ -1,5 +1,6 @@
 import { applyDecorators } from "@nestjs/common";
 import {
+  approvePoemSchema,
   createPoemSchema,
   createUserSchema,
   healthSchema,
@@ -11,8 +12,11 @@ import {
   poemSummarySchema,
   poemTagSchema,
   registerSchema,
+  rejectPoemSchema,
   sessionSchema,
+  studioPoemPageSchema,
   studioPoemSchema,
+  studioPoemSummarySchema,
   updatePoemSchema,
   updateUserSchema,
   userPageSchema,
@@ -70,6 +74,22 @@ const openApiSchemas = {
   StudioPoem: studioPoemSchema,
   CreatePoem: createPoemSchema,
   UpdatePoem: updatePoemSchema,
+  // The private read path, which repeats the summary/full split one level down:
+  // `StudioPoemSummary` is a row in the studio's dashboard or the moderation
+  // queue, `StudioPoem` above is the poem an editor is about to decide on.
+  StudioPoemSummary: studioPoemSummarySchema,
+  // One envelope for both `GET /studio/poems` and `GET /admin/queue`. They
+  // answer with the same rows — what differs is *which* rows, and that is a
+  // `where` clause rather than a shape. Registering it twice would put two
+  // structurally identical types in the generated client and leave a queue table
+  // unable to reuse the studio's row renderer.
+  StudioPoemPage: studioPoemPageSchema,
+  // The two decisions. Separate schemas rather than one with an `action`,
+  // because the note is optional on an approval and required on a rejection —
+  // which is the application half of a promise `Review.note`'s nullable column
+  // cannot make on its own.
+  ApprovePoem: approvePoemSchema,
+  RejectPoem: rejectPoemSchema,
 } satisfies Record<string, z.ZodType>;
 
 export type OpenApiSchemaName = keyof typeof openApiSchemas;
