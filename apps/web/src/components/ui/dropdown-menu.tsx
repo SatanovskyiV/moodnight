@@ -6,8 +6,30 @@ import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 
-function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+/**
+ * Non-modal by default, where Radix ships modal — the one deviation from
+ * shadcn's file, and it is forced by a rule this site keeps in its base layer.
+ *
+ * A modal menu locks the page behind it, and `react-remove-scroll` does that by
+ * putting `overflow: hidden` on <body>. app/globals.css says why that cannot
+ * happen here: an `overflow` other than `visible` on <body> makes <body> the
+ * nearest scroll container for the sticky top bar, and <body> is as tall as its
+ * content, so it never scrolls and the bar drops back to its static position at
+ * the top of the document. Opened from anywhere but the very top of a page, the
+ * whole bar — the trigger included — would vanish upward, with the scroll
+ * frozen so the reader could not follow it.
+ *
+ * Nothing about these menus wants the modal contract anyway. They are chrome
+ * hanging off a bar, not a dialog: dismissal on outside click and on Escape are
+ * `DismissableLayer`'s and stay, and what is given up is a focus trap and a
+ * scroll lock that a menu of three rows never needed. Passing `modal` at a call
+ * site still works, for a menu that one day does.
+ */
+function DropdownMenu({
+  modal = false,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" modal={modal} {...props} />;
 }
 
 function DropdownMenuPortal({
