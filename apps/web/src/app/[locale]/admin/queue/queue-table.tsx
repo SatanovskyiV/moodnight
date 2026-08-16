@@ -2,10 +2,11 @@
 
 import { poemQueueList, type StudioPoemSummary } from "@moodnight/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 
 import { listColumnHelper, type ListColumns } from "@/components/list/columns";
+import { Moment } from "@/components/list/moment";
 import { useListQuery } from "@/components/list/query";
 import { ListView } from "@/components/list/view";
 import { Link } from "@/i18n/navigation";
@@ -14,41 +15,6 @@ import { useListPoemQueue, type listPoemQueueResponse } from "@/lib/api/generate
 import type { ListPoemQueueParams } from "@/lib/api/generated/model";
 
 import { Decided } from "./decided";
-
-/**
- * A date in a cell, or a dash where there is none.
- *
- * `submittedAt` is nullable on the shared type and cannot be null on *this*
- * endpoint: the queue is `status: PENDING_REVIEW`, and the API stamps
- * `submittedAt` on the way in (apps/api/src/poems/poem-writes.service.ts). The
- * type is honest about drafts rather than about the queue, so the branch is
- * unreachable here and is written anyway — the alternative is a `!` that would
- * become a lie the day this cell is reused for the studio's dashboard, where
- * drafts are most of the rows.
- *
- * At module scope and holding its own formatter, rather than nested in the table
- * and closing over one. A component declared inside another is a new component
- * type on every render, and these are rendered from inside a `useMemo` — the
- * columns would go on calling whichever copy the memo was built with.
- *
- * `useFormatter` and not an ICU message, as on the names: these cells have no
- * prose around their dates, so a catalogue entry would be a placeholder and
- * nothing else. `timeZone: "Europe/Kyiv"` from i18n/request.ts still applies, so
- * the server and the browser agree on which day this is.
- */
-function Moment({ at }: { at: string | null }) {
-  const format = useFormatter();
-
-  if (!at) {
-    return <span className="text-parchment-faint">—</span>;
-  }
-
-  return (
-    <time dateTime={at} className="text-parchment-faint whitespace-nowrap tabular-nums">
-      {format.dateTime(new Date(at), { day: "numeric", month: "short", year: "numeric" })}
-    </time>
-  );
-}
 
 /**
  * What is waiting to be read: every poem in `PENDING_REVIEW`, oldest submission

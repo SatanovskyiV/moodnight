@@ -2,10 +2,11 @@
 
 import { userList, userRoleSchema, type User } from "@moodnight/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 
 import { listColumnHelper, type ListColumns } from "@/components/list/columns";
+import { Moment } from "@/components/list/moment";
 import { useListQuery } from "@/components/list/query";
 import { ListView } from "@/components/list/view";
 import { payload, type ApiRequestError } from "@/lib/api/error";
@@ -34,7 +35,6 @@ export function UsersTable() {
   // the user menu and the home page's greeting read. There is deliberately no
   // second list of role labels anywhere.
   const role = useTranslations("roles");
-  const format = useFormatter();
 
   const query = useListQuery(userList);
 
@@ -100,26 +100,15 @@ export function UsersTable() {
         // itself defaults to.
         sortDescFirst: true,
         meta: { hideBelow: "compact", align: "end" },
-        cell: (cell) => (
-          <time
-            dateTime={cell.getValue()}
-            className="text-parchment-faint whitespace-nowrap tabular-nums"
-          >
-            {/* `useFormatter` and not an ICU message, unlike `home.welcome.since`
-                — that one has prose around its date and this cell has none, so a
-                catalogue entry would be a placeholder and nothing else. The
-                `timeZone: "Europe/Kyiv"` from i18n/request.ts still applies, so
-                the server and the browser agree on which day this is. */}
-            {format.dateTime(new Date(cell.getValue()), {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })}
-          </time>
-        ),
+        // `Moment` rather than a `<time>` written out here, since the queue and
+        // the studio render the same cell — components/list/moment.tsx carries
+        // the note about `useFormatter` over an ICU message that used to live at
+        // this line. Its null branch is dead on this column, `createdAt` being
+        // non-nullable on every resource, and costs nothing for that.
+        cell: (cell) => <Moment at={cell.getValue()} />,
       }),
     ]);
-  }, [t, role, format]);
+  }, [t, role]);
 
   return (
     <ListView

@@ -120,8 +120,29 @@
     "sections": {
       "poems": {
         "title": "Poems",
-        "line": "This is where you will write new work and keep the written in order — drafts, poems sent to the queue, poems published.",
+        "line": "This is where you write new work and keep the written in order — drafts, poems sent to the queue, poems published.",
         "write": "Write a poem",
+        "searchPlaceholder": "Title or subtitle…",
+        "loading": "The night is gathering what you have written",
+        "total": "{count, plural, one {# poem} other {# poems}}",
+        "empty": "Nothing written yet",
+        "emptyLine": "The night is waiting for a first line. Whatever you write stays yours alone until you send it to the queue.",
+        "columns": {
+          "title": "Title",
+          "status": "State",
+          "createdAt": "Written",
+          "publishedAt": "Published",
+          "updatedAt": "Last saved"
+        },
+        "filters": {
+          "status": "State"
+        },
+        "status": {
+          "DRAFT": "Draft",
+          "PENDING_REVIEW": "Waiting",
+          "PUBLISHED": "On the fires",
+          "REJECTED": "Sent back"
+        },
         "compose": {
           "title": "A new poem",
           "line": "Light your candle and write. The lines fall exactly where you put them — the night reflows nothing.",

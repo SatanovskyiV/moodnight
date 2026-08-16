@@ -7,6 +7,7 @@ import {
   type CreatePoemInput,
   type WritablePoemStatus,
 } from "@moodnight/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useForm, useWatch, type Control } from "react-hook-form";
 
@@ -18,6 +19,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Link } from "@/i18n/navigation";
 import { payload, type ApiRequestError } from "@/lib/api/error";
 import { useCreatePoem } from "@/lib/api/generated/poems";
+
+import { STUDIO_POEMS_QUERY_KEY } from "../cache-keys";
 
 /**
  * The two things an author may do with a finished poem, which is the whole
@@ -87,6 +90,8 @@ export function ComposeForm() {
     defaultValues: { title: "", subtitle: "", body: "" },
   });
 
+  const queryClient = useQueryClient();
+
   // `<ApiRequestError>` because orval types `TError` from the statuses the
   // document lists, which is `void` — it cannot know what the mutator throws,
   // and `request` throws exactly one thing.
@@ -97,7 +102,22 @@ export function ComposeForm() {
     variables,
     error,
     reset: forget,
-  } = useCreatePoem<ApiRequestError>();
+  } = useCreatePoem<ApiRequestError>({
+    mutation: {
+      // The shelf next door has just stopped being true, and it will not find
+      // that out on its own: `staleTime` is a minute and `refetchOnWindowFocus`
+      // is off, so "Back to my poems" below would land on a cached list with
+      // this poem missing from it. See ../cache-keys.ts for why one key is
+      // enough here where the front page needs two.
+      //
+      // Nothing is awaited: the panel this renders next says what happened to
+      // the poem, and it says so from the response rather than from any list.
+      // The refetch is for the page the reader may go to afterwards.
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: STUDIO_POEMS_QUERY_KEY });
+      },
+    },
+  });
 
   /**
    * One submit handler per button, rather than one handler reading an "intent"
