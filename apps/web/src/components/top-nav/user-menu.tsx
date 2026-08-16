@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 
 import { ADMIN_LINKS, areaFloor } from "@/components/area/links";
 import { Sigil, Spark } from "@/components/editorial/ornaments";
+import { useWaiting } from "@/components/queue/use-waiting";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +32,13 @@ import { Link } from "@/i18n/navigation";
  * control they will end up with rather than one that resizes under the cursor
  * when the session finally lands. Nothing about it arrives late any more: the
  * reader's name is the menu's first row, not part of the trigger.
+ *
+ * **The one thing that does arrive late, and is allowed to.** An editor's seal
+ * takes a bead when poems are waiting. It cannot be known at first paint — it is
+ * a request, made only for somebody who may read the queue — so it is drawn
+ * *on* the seal rather than beside it: a mark that appears on an object already
+ * in place moves nothing, where a mark that takes room of its own would shift
+ * the bar under the cursor a second after the page settled.
  */
 export function UserMenu({
   user,
@@ -43,12 +51,37 @@ export function UserMenu({
 }) {
   const t = useTranslations("nav");
   const role = useTranslations("roles");
+  // The queue's own namespace, read from the top bar because this *is* the
+  // queue's count — the same sentence the rail's badge says, and saying it twice
+  // in two catalogues is how two places end up counting in different words.
+  const queue = useTranslations("admin.sections.queue");
+
+  // `null` for everybody who is not an editor, and for an editor with an empty
+  // queue: the hook answers "draw nothing" rather than a number this component
+  // would have to interpret. It costs a signed-in author no request at all.
+  const waiting = useWaiting();
+  const named = `${user.name} ${user.surname}`;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <MenuTrigger className="flex" label={`${user.name} ${user.surname}`}>
+        {/* The count joins the button's *name* rather than being read out of the
+            bead, and that is the whole reason the number is passed down instead
+            of the mark fetching its own. A screen reader announces the control
+            in DOM order, and the bead is drawn before the label — left where it
+            was, an editor would hear "три вірші чекають, Іван Петренко". The
+            catalogue owns the punctuation between the two halves, since where a
+            language puts a pause is a fact about the language. */}
+        <MenuTrigger
+          className="flex"
+          label={
+            waiting === null
+              ? named
+              : t("accountWaiting", { name: named, waiting: queue("waiting", { count: waiting }) })
+          }
+        >
           <Monogram user={user} />
+          {waiting !== null && <Waiting count={waiting} />}
         </MenuTrigger>
       </DropdownMenuTrigger>
 
@@ -230,7 +263,7 @@ function MenuTrigger({
           struck out of something rather than drawn as an outline. */}
       <span
         aria-hidden="true"
-        className="border-primary/40 from-primary/12 group-hover:border-primary/75 group-hover:shadow-glow-soft group-focus-visible:border-primary/75 group-focus-visible:shadow-glow-soft group-data-[state=open]:border-primary/75 group-data-[state=open]:shadow-glow-soft grid size-8 place-items-center rounded-full border bg-gradient-to-b to-transparent transition-[border-color,box-shadow] duration-300"
+        className="border-primary/40 from-primary/12 group-hover:border-primary/75 group-hover:shadow-glow-soft group-focus-visible:border-primary/75 group-focus-visible:shadow-glow-soft group-data-[state=open]:border-primary/75 group-data-[state=open]:shadow-glow-soft relative grid size-8 place-items-center rounded-full border bg-gradient-to-b to-transparent transition-[border-color,box-shadow] duration-300"
       >
         {children}
       </span>
@@ -305,6 +338,51 @@ function MenuLink({ href, children }: { href: string; children: React.ReactNode 
     <MenuItem asChild>
       <Link href={href}>{children}</Link>
     </MenuItem>
+  );
+}
+
+/**
+ * How many poems are waiting, as a bead struck on the edge of the reader's seal.
+ *
+ * **Why a bead and not a badge.** The usual notification pill — a filled red
+ * disc, sans-serif, hung off a corner — is the one thing in this bar that would
+ * read as borrowed from another product. Everything here is a ring with a mark
+ * in it, drawn in gold hairlines on the parchment ground, and so is this: the
+ * same border colour as the ring, the same faint wash inside it, the same small
+ * caps the rail's badge counts in, and the same lit states as the seal it sits
+ * on, brightening with it under the cursor rather than answering separately.
+ * What it borrows from a notification badge is only the position, which is the
+ * one part that is not decoration — the upper right is where a reader's eye goes
+ * looking for a count.
+ *
+ * Set on the ring's shoulder at 45° off the top, and pushed far enough out along
+ * that diagonal to leave the initials alone. Centred *on* the circumference it
+ * reached half a bead — 0.5rem — into the seal, which is across the corner of a
+ * pair of capitals; the two offsets below stand its centre 1.27rem from the
+ * seal's, so its inner edge is 0.77rem out and the letters, whose own corners
+ * reach about 0.55rem, keep their ground.
+ *
+ * It still crosses the ring's stroke, and that part is deliberate. A bead
+ * floating clear of the seal would be a second object beside it; one that
+ * overlaps — filling with the page's own ground, so it cuts a clean round out of
+ * the stroke — is a mark struck *into* the seal, which is what this site does
+ * with every circle it draws. Clear of the letters, into the ring: those are two
+ * different edges, and there is room between them for exactly this bead.
+ *
+ * Ninety-nine is as high as it counts, and only in the drawing: a fourth glyph
+ * would stretch the bead into a capsule as wide as the seal is. The true number
+ * is in the trigger's accessible name either way, which is why this is
+ * `aria-hidden` — the count is announced once, as a sentence, rather than twice
+ * with a bare figure in the middle.
+ */
+function Waiting({ count }: { count: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="border-primary/60 from-primary/15 text-primary bg-background group-hover:border-primary/90 group-hover:shadow-glow-soft group-focus-visible:border-primary/90 group-focus-visible:shadow-glow-soft group-data-[state=open]:border-primary/90 group-data-[state=open]:shadow-glow-soft font-caps absolute -top-[0.4rem] -right-[0.4rem] grid h-4 min-w-4 place-items-center rounded-full border bg-gradient-to-b to-transparent px-[0.15rem] text-[0.62rem] leading-none tabular-nums transition-[border-color,box-shadow] duration-300"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 

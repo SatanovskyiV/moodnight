@@ -6,6 +6,8 @@ import { ADMIN_LINKS } from "@/components/area/links";
 import { AreaShell } from "@/components/area/shell";
 import { resolveLocale, type LocaleParams } from "@/i18n/resolve-locale";
 
+import { Waiting } from "./queue/waiting";
+
 export async function generateMetadata(props: LocaleParams): Promise<Metadata> {
   const locale = await resolveLocale(props);
   const t = await getTranslations({ locale, namespace: "admin" });
@@ -22,6 +24,12 @@ export async function generateMetadata(props: LocaleParams): Promise<Metadata> {
  * against it, and `RolesGuard` on the API enforces the same `ROLE_RANK` on every
  * request the pages make. Adding the queue was one row in that table and no edit
  * here, which was the point of putting it there.
+ *
+ * The one thing a section says about itself here is the queue's count, handed to
+ * the shell as a badge against its href. It is a client component and it is
+ * *this* file's import rather than the rail's, because the rail is both areas'
+ * and the studio has nothing to count — the frame carries marks, the area
+ * decides which.
  */
 export default async function AdminLayout({
   children,
@@ -43,6 +51,10 @@ function AdminFrame({ children }: { children: React.ReactNode }) {
         role,
         label: t(`sections.${key}.title`),
       }))}
+      // Keyed by the href in `ADMIN_LINKS` rather than by a section name, which
+      // is what makes an unwired badge visible: a typo here draws nothing beside
+      // anything instead of quietly attaching to the wrong row.
+      badges={{ "/admin/queue": <Waiting /> }}
     >
       {children}
     </AreaShell>

@@ -14,6 +14,7 @@
     "signOut": "Вийти",
     "signingOut": "Виходимо…",
     "account": "Твоя свіча",
+    "accountWaiting": "{name}, {waiting}",
     "myWriting": "Моє письмо",
     "administration": "Врядування"
   },
@@ -207,6 +208,7 @@
         "searchPlaceholder": "Назва або підзаголовок…",
         "loading": "Ніч перебирає подані вірші",
         "total": "{count, plural, one {# вірш} few {# вірші} many {# віршів} other {# вірша}}",
+        "waiting": "{count, plural, one {# вірш чекає} few {# вірші чекають} many {# віршів чекають} other {# вірша чекають}}",
         "empty": "Черга порожня",
         "emptyLine": "Жоден вірш не чекає на відповідь. Тиша тут — добра новина.",
         "columns": {

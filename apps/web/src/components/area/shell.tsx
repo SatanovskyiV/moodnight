@@ -36,10 +36,12 @@ import { AreaRail } from "./rail";
 export function AreaShell({
   title,
   links,
+  badges,
   children,
 }: {
   title: string;
   links: LabelledAreaLink[];
+  badges?: Record<string, React.ReactNode>;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -58,7 +60,12 @@ export function AreaShell({
             its own box instead of stretching the track and pushing the rail off
             the screen. */}
         <div className="compact:grid compact:grid-cols-[14rem_minmax(0,1fr)] compact:gap-10 compact:items-start flex flex-col gap-6">
-          <AreaRail title={title} links={links} />
+          {/* `badges` arrives from the server layout above as elements in a
+              plain object and is passed through untouched, the same way
+              `children` is: the marks are the area's business, mount only for
+              the rows the rail decides to draw, and this component stays the
+              frame rather than becoming a place that fetches things. */}
+          <AreaRail title={title} links={links} badges={badges} />
 
           <div className="min-w-0">
             <RequireRole role={minimumRole(links, pathname)}>{children}</RequireRole>

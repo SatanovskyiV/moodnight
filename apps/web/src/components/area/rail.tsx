@@ -26,8 +26,22 @@ import type { LabelledAreaLink } from "./links";
  * the reader's own page in gold for free — the rule is already in that
  * component, waiting for something to supply the attribute. This is that
  * something.
+ *
+ * `badges` is how a section says something about itself in the rail — the queue
+ * hands over how many poems are waiting — keyed by the href it belongs beside.
+ * A node and not a number, because the rail must not learn to count: the mark is
+ * whatever the area handed it, and only the area knows what it costs to know.
+ * Optional, so the studio passes nothing and looks exactly as it did.
  */
-export function AreaRail({ title, links }: { title: string; links: LabelledAreaLink[] }) {
+export function AreaRail({
+  title,
+  links,
+  badges,
+}: {
+  title: string;
+  links: LabelledAreaLink[];
+  badges?: Record<string, React.ReactNode>;
+}) {
   const t = useTranslations("roles");
   const pathname = usePathname();
   const { state } = useSession();
@@ -63,7 +77,7 @@ export function AreaRail({ title, links }: { title: string; links: LabelledAreaL
           come rather than as a layout that overflowed. */}
       <ul className="compact:flex-col compact:gap-1 compact:overflow-visible flex gap-6 overflow-x-auto">
         {visible.map(({ href, label }) => (
-          <li key={href} className="shrink-0">
+          <li key={href} className="flex shrink-0 items-center gap-2">
             <NavLink
               asChild
               // Exact, not prefix: with `/studio` in the same list as
@@ -75,6 +89,11 @@ export function AreaRail({ title, links }: { title: string; links: LabelledAreaL
             >
               <Link href={href}>{label}</Link>
             </NavLink>
+
+            {/* Beside the link and never inside it: the link's accessible name
+                is the section, and a count folded into it would make the name
+                change every time somebody submitted a poem. */}
+            {badges?.[href]}
           </li>
         ))}
       </ul>
