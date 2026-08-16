@@ -199,6 +199,83 @@
           "REJECT": "Sent back",
           "APPROVE": "Was on the fires",
           "never": "First time"
+        },
+        "review": {
+          "title": "Reading",
+          "loading": "The poem is unfolding",
+          "back": "Back to the queue",
+          "retry": "Try again",
+          "waitingSince": "waiting since {date}",
+          "written": "written {date}",
+          "original": "the original, as its author wrote it",
+          "edited": "version {version, number} · last saved by {name}, {date}",
+          "previous": {
+            "title": "What was decided last time",
+            "APPROVE": "Approved",
+            "REJECT": "Sent back",
+            "by": "{name} · {date}",
+            "note": "“{note}”"
+          },
+          "edit": {
+            "start": "Edit",
+            "startFor": "Edit “{title}”",
+            "poemTitle": "Title",
+            "subtitle": "Subtitle",
+            "subtitleOptional": "if it has one",
+            "body": "The poem",
+            "bodyHint": "Every line break is the author’s. We reflow nothing and align nothing.",
+            "count": "{count, number} of {max, number} characters",
+            "save": "Save",
+            "saving": "Saving…",
+            "cancel": "Cancel",
+            "error": {
+              "title": "A poem cannot be left without a title",
+              "body": "A poem with no words is silence",
+              "signedOut": "Your candle went out. Sign in again in another tab — nothing you have changed will be lost.",
+              "gone": "This poem is gone: its author took it out of the queue.",
+              "raced": "Somebody else was in this poem at the same moment. Reload and read what it says now.",
+              "network": "Silence in answer — the server did not speak. Try again.",
+              "unexpected": "Something guttered out on our side. Try again."
+            }
+          },
+          "decide": {
+            "approve": "Put it on the fires",
+            "confirmApprove": "Yes, to the fires",
+            "approving": "Kindling…",
+            "reject": "Send it back",
+            "confirmReject": "Yes, send it back",
+            "rejecting": "Sending it back…",
+            "cancel": "Not now",
+            "note": "A word to the author",
+            "optional": "if you want one",
+            "required": "required — a return with no reason is not one",
+            "notePlaceholder": "e.g., the second stanza breaks off before the thought does.",
+            "error": {
+              "note": "Tell the author why the poem is coming back",
+              "signedOut": "Your candle went out. Sign in again in another tab — nothing you have written will be lost.",
+              "gone": "This poem is gone: its author took it out of the queue.",
+              "decided": "Somebody answered this poem before you. There is nothing left to decide.",
+              "network": "Silence in answer — the server did not speak. Try again.",
+              "unexpected": "Something guttered out on our side. Try again."
+            }
+          },
+          "done": {
+            "approved": "It is on the fires",
+            "approvedLine": "“{title}” has taken its place among the published.",
+            "rejected": "Sent back",
+            "rejectedLine": "“{title}” has gone back to its author with your word.",
+            "back": "Back to the queue"
+          },
+          "left": {
+            "title": "This poem has left the queue",
+            "line": "Somebody answered it before you. You can still read it; you cannot answer it twice."
+          },
+          "error": {
+            "gone": "There is no such poem. Its author may have taken it out of the queue.",
+            "signedOut": "Your candle went out. Sign in again to read the poem.",
+            "network": "Silence in answer — the server did not speak. Try again.",
+            "unexpected": "Something guttered out on our side. Try again."
+          }
         }
       },
       "users": {

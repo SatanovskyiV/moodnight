@@ -1,6 +1,6 @@
 "use client";
 
-import { poemQueueList, type PoemReview, type StudioPoemSummary } from "@moodnight/shared";
+import { poemQueueList, type StudioPoemSummary } from "@moodnight/shared";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useMemo } from "react";
@@ -8,29 +8,12 @@ import { useMemo } from "react";
 import { listColumnHelper, type ListColumns } from "@/components/list/columns";
 import { useListQuery } from "@/components/list/query";
 import { ListView } from "@/components/list/view";
+import { Link } from "@/i18n/navigation";
 import { payload, type ApiRequestError } from "@/lib/api/error";
 import { useListPoemQueue, type listPoemQueueResponse } from "@/lib/api/generated/poems";
 import type { ListPoemQueueParams } from "@/lib/api/generated/model";
 
-/**
- * What a poem that has been here before wears, by what was decided last time.
- *
- * A literal lookup and never a template, for the reason components/list/columns.ts
- * spells out at `REVEAL`: Tailwind finds classes by scanning source for whole
- * strings, so a class assembled at runtime is a class that does not exist in the
- * stylesheet.
- *
- * Two tones because the two facts are different and an editor is scanning for
- * one of them. A poem that was sent back and has come again is the row to read
- * first — it is somebody answering a note — and ember is the colour this site
- * already keeps for a thing that went out. A poem that was published and has
- * been resubmitted is an edit to something already on the fires, which is
- * ordinary, and wears the same dim frame the names give a role.
- */
-const DECIDED = {
-  REJECT: "border-ember/30 text-ember",
-  APPROVE: "border-primary/20 text-parchment-faint",
-} as const satisfies Record<PoemReview["action"], string>;
+import { Decided } from "./decided";
 
 /**
  * A date in a cell, or a dash where there is none.
@@ -127,7 +110,22 @@ export function QueueTable() {
         header: t("columns.title"),
         cell: (cell) => (
           <span className="flex flex-col">
-            <span>{cell.getValue()}</span>
+            {/* The way in, and the only interactive thing in a row. Its
+                accessible name is the poem's title and nothing else — the
+                subtitle and the author below stay outside it, so a reader
+                tabbing through the table hears one poem per stop rather than a
+                paragraph.
+
+                The treatment is the sort header's, in components/list/table.tsx:
+                gold on hover and on focus, with the ring the rest of the site
+                uses. `Link` from i18n/navigation and never `next/link`, so the
+                href resolves under whichever locale is being read. */}
+            <Link
+              href={`/admin/queue/${cell.row.original.id}`}
+              className="hover:text-primary focus-visible:text-primary focus-visible:outline-ring w-fit transition-colors duration-300 outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {cell.getValue()}
+            </Link>
 
             {/* The poem's own second line, where it has one. Italic and dim, the
                 way the feed's card sets a subtitle — a title and a subtitle are
@@ -177,17 +175,11 @@ export function QueueTable() {
             );
           }
 
-          return (
-            <span
-              className={`font-caps text-micro tracking-label inline-block border px-3 py-1 uppercase ${DECIDED[review.action]}`}
-            >
-              {/* The closed union off the contract's own enum, looked up in the
-                  catalogue at render — the shape components/list/view.tsx uses
-                  for `error.${failure}`. A third action would fail typecheck
-                  here rather than render a key. */}
-              {t(`returned.${review.action}`)}
-            </span>
-          );
+          // The closed union off the contract's own enum, looked up in the
+          // catalogue at render — the shape components/list/view.tsx uses for
+          // `error.${failure}`. A third action would fail typecheck here rather
+          // than render a key.
+          return <Decided action={review.action} label={t(`returned.${review.action}`)} />;
         },
       }),
       column.accessor("createdAt", {
