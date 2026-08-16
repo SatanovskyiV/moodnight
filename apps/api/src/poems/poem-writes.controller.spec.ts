@@ -1,7 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { Prisma } from "@moodnight/db";
-import { POEM_BODY_MAX } from "@moodnight/shared";
+import { POEM_BODY_MAX, POEM_REVISIONS_MAX } from "@moodnight/shared";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,12 +14,14 @@ import {
   bearer,
 } from "../testing/auth-harness";
 import {
+  contentRow,
   createPrismaMock,
   OTHER_USER_ID,
   ownershipRow,
   POEM_ID,
   type PrismaMock,
   prismaError,
+  REVISION_ID,
   studioPoemRow,
   TAG_ID,
   tagRow,
@@ -86,7 +88,7 @@ describe("Poem write endpoints", () => {
     vi.clearAllMocks();
     // No neighbouring slugs, so `deriveSlug` settles on the unsuffixed base.
     prisma.poem.findMany.mockResolvedValue([]);
-    prisma.poem.findUnique.mockResolvedValue(ownershipRow());
+    prisma.poem.findUnique.mockResolvedValue(contentRow());
     prisma.poem.create.mockResolvedValue(studioPoemRow({ status: "DRAFT", publishedAt: null }));
     prisma.poem.update.mockResolvedValue(studioPoemRow());
     prisma.poem.delete.mockResolvedValue({ id: POEM_ID });
@@ -395,7 +397,7 @@ describe("Poem write endpoints", () => {
      */
     it("keeps the original date when a poem is published again", async () => {
       prisma.poem.findUnique.mockResolvedValue(
-        ownershipRow({ status: "DRAFT", publishedAt: new Date("2026-03-04T05:06:07.000Z") }),
+        contentRow({ status: "DRAFT", publishedAt: new Date("2026-03-04T05:06:07.000Z") }),
       );
 
       await request(app.getHttpServer())
@@ -519,6 +521,369 @@ describe("Poem write endpoints", () => {
         .set(...bearer(asAuthor))
         .send({ title: "Немає" })
         .expect(400);
+    });
+  });
+
+  /**
+   * Rule 4 — nothing overwrites a poem's text without keeping it.
+   *
+   * These are the cases the `PoemRevision` table exists for, and they are worth
+   * their own block because the thing being asserted is invisible in the
+   * response: every one of these requests succeeds identically whether or not a
+   * version was written, and the difference is a row nobody asked for. An editor
+   * may reach somebody else's poem, so without these the site could rewrite a
+   * poem published under an author's name and keep no account of having done it.
+   *
+   * The pairs matter more than the individual cases. "A change is recorded" and
+   * "a non-change is not" are one rule read from both ends, and a version written
+   * on every PATCH would pass the first half while making the trail useless.
+   */
+  describe("keeping the text it replaces", () => {
+    /** The `data` the service handed the revision's `create`. */
+    const versioned = () => {
+      const [args] = prisma.poemRevision.create.mock.calls[0] as [
+        { data: Prisma.PoemRevisionUncheckedCreateInput },
+      ];
+
+      return args.data;
+    };
+
+    it("writes the first version alongside the poem, credited to its author", async () => {
+      await request(app.getHttpServer())
+        .post("/poems")
+        .set(...bearer(asAuthor))
+        .send(aPoem)
+        .expect(201);
+
+      // Nested inside the poem's own insert rather than a second call: one
+      // statement, so a poem cannot exist without its original.
+      expect(prisma.poemRevision.create).not.toHaveBeenCalled();
+      expect(created()).toMatchObject({
+        revisions: {
+          create: { editorId: USER_ID, version: 1, title: aPoem.title, body: aPoem.body },
+        },
+      });
+    });
+
+    it("carries a missing subtitle into the first version as null", async () => {
+      await request(app.getHttpServer())
+        .post("/poems")
+        .set(...bearer(asAuthor))
+        .send(aPoem)
+        .expect(201);
+
+      expect(created()).toMatchObject({ revisions: { create: { subtitle: null } } });
+    });
+
+    it("records a rewritten body, and what the poem will say rather than the patch", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Зовсім інші слова." })
+        .expect(200);
+
+      // The title was not sent, so the version carries the one already on the
+      // row — a snapshot of the whole poem, not of the request.
+      expect(versioned()).toMatchObject({
+        poemId: POEM_ID,
+        editorId: USER_ID,
+        title: contentRow().title,
+        body: "Зовсім інші слова.",
+      });
+    });
+
+    it("records a retitling too, not only a rewritten body", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ title: "Друга редакція" })
+        .expect(200);
+
+      expect(versioned()).toMatchObject({ title: "Друга редакція", body: contentRow().body });
+    });
+
+    it("records a subtitle being removed, which is a change and not an absence", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ subtitle: null })
+        .expect(200);
+
+      expect(versioned()).toMatchObject({ subtitle: null, title: contentRow().title });
+    });
+
+    it("credits the editor when the edit is to somebody else's poem", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .send({ body: "Виправлений рядок." })
+        .expect(200);
+
+      // The poem still belongs to USER_ID; the version belongs to whoever typed
+      // it. This is the whole reason the table names an editor separately.
+      expect(versioned()).toMatchObject({ editorId: OTHER_USER_ID, poemId: POEM_ID });
+    });
+
+    it("writes the version before the poem, so the answer carries the new one", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Ще інші слова." })
+        .expect(200);
+
+      // Both writes land in one `$transaction`, and the version comes first:
+      // `STUDIO_FIELDS` reads the newest version back as `lastEdit`, and a
+      // transaction sees its own writes, so the other order would answer with
+      // the version this patch replaced.
+      //
+      // Asserted on the *position in the array* rather than on which delegate
+      // was called first, because those are different facts here. Prisma runs an
+      // array transaction in order, but building a query and running it are two
+      // moments — a real `PrismaPromise` does nothing until it is handed over,
+      // while these stubs resolve the instant they are called. Only the array
+      // says what the database will do.
+      const [operations] = prisma.$transaction.mock.calls[0] as [Promise<unknown>[]];
+      const [version, poem] = await Promise.all(operations);
+
+      expect(operations).toHaveLength(2);
+      expect(version).toEqual({ id: REVISION_ID });
+      expect(poem).toMatchObject({ id: POEM_ID });
+    });
+
+    it("writes nothing when the patch only moves the poem's status", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ status: "PENDING_REVIEW" })
+        .expect(200);
+
+      expect(prisma.poem.update).toHaveBeenCalled();
+      expect(prisma.poemRevision.create).not.toHaveBeenCalled();
+      // And no transaction at all: a patch that changes no text costs exactly
+      // what it cost before there was a trail.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing when an editor only features a poem", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .send({ featured: true })
+        .expect(200);
+
+      expect(prisma.poemRevision.create).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing when the patch resends the text the poem already has", async () => {
+      const { title, subtitle, body } = contentRow();
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ title, subtitle, body })
+        .expect(200);
+
+      // A form that submits every field it rendered is the ordinary client, and
+      // a version per save would fill the trail with rows saying nothing
+      // happened.
+      expect(prisma.poemRevision.create).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing when the themes change but the words do not", async () => {
+      prisma.tag.findMany.mockResolvedValue([tagRow()]);
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ tags: ["melankholiia"] })
+        .expect(200);
+
+      expect(updated()).toHaveProperty("tags");
+      expect(prisma.poemRevision.create).not.toHaveBeenCalled();
+    });
+
+    it("keeps no version when the caller was refused the poem in the first place", async () => {
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asOtherAuthor))
+        .send({ body: "Не моє." })
+        .expect(403);
+
+      expect(prisma.poemRevision.create).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The version number, and the ceiling on how many of them one poem keeps.
+   *
+   * The number is a column rather than a row's position in the trail, which is
+   * what pruning makes necessary: drop the middle of a history and positions
+   * shift, so a version an editor referred to yesterday would mean a different
+   * row today. These cases pin the two halves of that — that the number is
+   * chosen from what the poem already holds and never reused, and that passing
+   * the cap costs the middle of the trail and never its beginning.
+   */
+  describe("numbering and the history cap", () => {
+    /** The `data` the service handed the revision's `create`. */
+    const versioned = () => {
+      const [args] = prisma.poemRevision.create.mock.calls[0] as [
+        { data: Prisma.PoemRevisionUncheckedCreateInput },
+      ];
+
+      return args.data;
+    };
+
+    /** The `where` the prune handed `deleteMany`. */
+    const pruned = () => {
+      const [args] = prisma.poemRevision.deleteMany.mock.calls[0] as [
+        { where: Prisma.PoemRevisionWhereInput },
+      ];
+
+      return args.where;
+    };
+
+    it("numbers a new version one past the highest the poem holds", async () => {
+      prisma.poem.findUnique.mockResolvedValue(contentRow({ revisions: [{ version: 7 }] }));
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Восьма редакція." })
+        .expect(200);
+
+      expect(versioned()).toMatchObject({ version: 8 });
+    });
+
+    /**
+     * The highest, not a count. A pruned poem has fewer rows than it has had
+     * versions, and counting would hand out a number some dropped row already
+     * used — which the unique index would then refuse.
+     */
+    it("numbers past the highest even when older versions have been pruned", async () => {
+      prisma.poem.findUnique.mockResolvedValue(contentRow({ revisions: [{ version: 137 }] }));
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Сто тридцять восьма." })
+        .expect(200);
+
+      expect(versioned()).toMatchObject({ version: 138 });
+    });
+
+    /**
+     * Two editors saved at the same moment: both read the same highest version,
+     * both tried to write one past it, and the unique index refused the second.
+     * A 409 and not a 500 — the loser can re-read and re-apply, and the poem's
+     * own update rolled back with the version, so nothing half-landed.
+     */
+    it("answers a lost numbering race with a 409 that says nothing changed", async () => {
+      prisma.$transaction.mockRejectedValueOnce(prismaError("P2002"));
+
+      const { body } = await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .send({ body: "Одночасно." })
+        .expect(409);
+
+      expect(body.message).toMatch(/another editor saved this poem/i);
+      expect(body.message).toMatch(/nothing was changed/i);
+    });
+
+    it("leaves the trail alone while the poem is under the cap", async () => {
+      prisma.poem.findUnique.mockResolvedValue(
+        contentRow({ revisions: [{ version: POEM_REVISIONS_MAX - 1 }] }),
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Рівно сто." })
+        .expect(200);
+
+      // The hundredth version is the last one that fits; nothing is dropped yet.
+      expect(versioned()).toMatchObject({ version: POEM_REVISIONS_MAX });
+      expect(prisma.poemRevision.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("drops the oldest versions once the poem passes the cap", async () => {
+      prisma.poem.findUnique.mockResolvedValue(
+        contentRow({ revisions: [{ version: POEM_REVISIONS_MAX }] }),
+      );
+      prisma.poemRevision.findMany.mockResolvedValue([{ id: REVISION_ID }]);
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Сто перша." })
+        .expect(200);
+
+      // The survivors are named off the index, one short of the cap — the
+      // original is kept on top of them.
+      const [survivors] = prisma.poemRevision.findMany.mock.calls[0] as [
+        { orderBy: unknown; take: number },
+      ];
+
+      expect(survivors).toMatchObject({
+        orderBy: { version: "desc" },
+        take: POEM_REVISIONS_MAX - 1,
+      });
+      expect(prisma.poemRevision.deleteMany).toHaveBeenCalled();
+    });
+
+    /** The one version a prune may never take. */
+    it("never drops the poem's original", async () => {
+      prisma.poem.findUnique.mockResolvedValue(
+        contentRow({ revisions: [{ version: POEM_REVISIONS_MAX + 40 }] }),
+      );
+      prisma.poemRevision.findMany.mockResolvedValue([{ id: REVISION_ID }]);
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Далеко за межею." })
+        .expect(200);
+
+      expect(pruned()).toMatchObject({
+        poemId: POEM_ID,
+        version: { not: 1 },
+        id: { notIn: [REVISION_ID] },
+      });
+    });
+
+    /**
+     * The prune is housekeeping, so it must not be able to fail the edit. An
+     * author told their poem was not saved when it was is a far worse outcome
+     * than a trail one row too long, which the next edit corrects anyway.
+     */
+    it("still answers 200 when the prune fails", async () => {
+      prisma.poem.findUnique.mockResolvedValue(
+        contentRow({ revisions: [{ version: POEM_REVISIONS_MAX + 1 }] }),
+      );
+      prisma.poemRevision.findMany.mockRejectedValueOnce(new Error("connection lost"));
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ body: "Попри все." })
+        .expect(200);
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+    });
+
+    /** Housekeeping only. A patch that writes no version prunes nothing. */
+    it("does not prune when the patch changed no text", async () => {
+      prisma.poem.findUnique.mockResolvedValue(
+        contentRow({ revisions: [{ version: POEM_REVISIONS_MAX + 40 }] }),
+      );
+
+      await request(app.getHttpServer())
+        .patch(`/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .send({ status: "PENDING_REVIEW" })
+        .expect(200);
+
+      expect(prisma.poemRevision.deleteMany).not.toHaveBeenCalled();
     });
   });
 

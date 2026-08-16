@@ -84,6 +84,64 @@ export const LATEST_REVIEW = {
 } as const;
 
 /**
+ * What one version of a poem says about who wrote it, and nothing about what it
+ * said.
+ *
+ * The narrow half of {@link REVISION_FIELDS}, and the split is the whole reason
+ * there are two constants. `lastEdit` rides along on every studio and queue row,
+ * and the newest revision's text is by construction identical to the poem's
+ * current `body` — so selecting it there would send every poem on the page
+ * twice.
+ *
+ * The editor is selected by the same five columns an author and a reviewer are,
+ * for the reason given on {@link REVIEW_FIELDS}: `role` is not among them, so
+ * the wire never carries an editor's permission.
+ */
+export const EDIT_FIELDS = {
+  version: true,
+  createdAt: true,
+  editor: { select: AUTHOR_FIELDS },
+} as const;
+
+/**
+ * The version a poem's text is currently on, and only that one.
+ *
+ * `take: 1` over the newest, riding the unique index `PoemRevision` has for
+ * exactly this ordering (`@@unique([poemId, version])` in schema.prisma) — the
+ * same arrangement, and the same cost argument, as {@link LATEST_REVIEW} above:
+ * one batched relation load per page rather than every version every poem has
+ * ever had.
+ *
+ * Ordered by `version` and not by `createdAt`, which is the difference from
+ * `LATEST_REVIEW` and removes a problem rather than solving one. Two decisions
+ * cannot land on a poem at once, so a review's timestamp needs no tie-break; two
+ * editors saving the same poem in the same millisecond *can*, and a timestamp
+ * with millisecond precision would need one. `version` is unique per poem, so
+ * there is no tie to break and the answer is the same row every time.
+ */
+export const LATEST_REVISION = {
+  select: EDIT_FIELDS,
+  orderBy: { version: "desc" },
+  take: 1,
+} as const;
+
+/**
+ * One whole version, as `GET /poems/{id}/revisions` lists them: everything
+ * {@link EDIT_FIELDS} says about who saved it, plus the text they saved.
+ *
+ * The text is here and not in `LATEST_REVISION` because this is the one endpoint
+ * that is *about* the text — a client comparing two versions needs both in full,
+ * and there is no cheaper shape that answers the question the trail is asked.
+ */
+export const REVISION_FIELDS = {
+  ...EDIT_FIELDS,
+  id: true,
+  title: true,
+  subtitle: true,
+  body: true,
+} as const;
+
+/**
  * What the write path selects: the same columns, plus the three a reader has no
  * use for and an author cannot work without — the text itself, where it is on
  * its way to being public, and when it was last saved — and the decision that
@@ -94,6 +152,18 @@ export const LATEST_REVIEW = {
  * history is not part of the poem: the public feed is cached at the edge and
  * served to anonymous readers, and an editor's note about a second stanza is
  * the last thing that belongs in it.
+ *
+ * The same boundary, and the same sentence, covers `revisions`. Who rewrote a
+ * stanza before it was approved is editorial working material — it belongs to
+ * the private half of the site and is narrowed again per caller by `toLastEdit`
+ * in ./poem-mappers, which is what keeps it from an author who is allowed to
+ * select these columns but not to read them.
+ *
+ * The version number rides in on that one row rather than being counted: it is a
+ * column on the newest revision, so nothing here aggregates. Which is also the
+ * truthful answer once a trail has been pruned — a poem written a hundred and
+ * thirty-seven times says 137, where counting the rows still on record would say
+ * a hundred.
  */
 export const STUDIO_FIELDS = {
   ...POEM_FIELDS,
@@ -102,11 +172,13 @@ export const STUDIO_FIELDS = {
   submittedAt: true,
   updatedAt: true,
   reviews: LATEST_REVIEW,
+  revisions: LATEST_REVISION,
 } as const;
 
 export type PoemRow = Prisma.PoemGetPayload<{ select: typeof POEM_FIELDS }>;
 export type FullPoemRow = Prisma.PoemGetPayload<{ select: typeof POEM_FIELDS & { body: true } }>;
 export type StudioPoemRow = Prisma.PoemGetPayload<{ select: typeof STUDIO_FIELDS }>;
+export type RevisionRow = Prisma.PoemRevisionGetPayload<{ select: typeof REVISION_FIELDS }>;
 
 /**
  * What `?tag=` and `?author=` mean in SQL — the half of a relation filter that

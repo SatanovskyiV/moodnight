@@ -296,13 +296,62 @@ export const poemReviewSchema = z
 export type PoemReview = z.infer<typeof poemReviewSchema>;
 
 /**
+ * Who last wrote a poem's text, and which version it is on — the short answer
+ * to "has anybody edited this, and who", carried on every studio and queue row.
+ *
+ * An editor may fix a line before approving a poem and keep fixing it
+ * afterwards, so the text on the site is not always the text its author
+ * submitted. This is what makes that visible without opening the trail: a poem
+ * at `version` 1 has never been rewritten, and one past it names the account
+ * that last did.
+ *
+ * **`editor` is not nullable, and that is the difference from
+ * {@link poemReviewSchema}.** There the field is built for every caller and only
+ * the reviewer's name is withheld, because an author is owed the verdict and the
+ * reason whatever else they may not see. Here there is no such half: the version
+ * count is itself editorial working material, so either the whole object is sent
+ * or none of it is, and the field is null on the poem for anybody below an
+ * editor — its own author included. The line is drawn in `maySeeEdits` in the
+ * API's poem access rules, for the reason every rule there lives where it does.
+ *
+ * The editor is described by {@link poemAuthorSchema}, the same reuse
+ * {@link poemReviewSchema} makes of it and for the same reason: an editor is a
+ * poet with a role, and nothing about the *permission* appears here.
+ */
+export const poemEditSchema = z
+  .object({
+    version: z
+      .number()
+      .int()
+      .min(1)
+      .meta({
+        description:
+          "Which version the poem's text is on. 1 is the original, as its " +
+          "author first wrote it; anything higher means it has been rewritten " +
+          "that many times. It counts every version the poem has ever had, not " +
+          "how many are still on record — a long-lived poem may report 137 with " +
+          "only the most recent hundred kept.",
+        example: 2,
+      }),
+    editor: poemAuthorSchema.meta({
+      description:
+        "Who saved this version — the poem's author on version 1, and whoever " +
+        "made the change on every one after.",
+    }),
+    editedAt: z.iso.datetime().meta({ description: "When this version was saved." }),
+  })
+  .meta({ description: "Who last wrote a poem's text, and which version it is on." });
+
+export type PoemEdit = z.infer<typeof poemEditSchema>;
+
+/**
  * Everything the private half of the site says about a poem, and the base its
  * two shapes are built from — the same factoring {@link poemCoreSchema} does
  * for the public half, and for the same reason: the full poem and the row in a
  * list must differ in exactly one field, and writing them separately is how
  * they stop doing so.
  *
- * Five differences from {@link poemSchema}, and each of them is why these exist
+ * Six differences from {@link poemSchema}, and each of them is why these exist
  * rather than being the same schemas:
  *
  * - **`status` is present.** On the read path it is absent because the answer
@@ -320,6 +369,10 @@ export type PoemReview = z.infer<typeof poemReviewSchema>;
  *   and — to an editor — by whom. A REJECTED poem with no reason attached is
  *   the state the `Review` table exists to prevent, and it stays prevented only
  *   if something actually reads the row back.
+ * - **`lastEdit` is present, and for editors only.** `updatedAt` says a poem was
+ *   saved; this says whose hand it was and how many versions deep the text is.
+ *   The public path has no business with either, and unlike the five above this
+ *   one is withheld from the poem's own author too — see {@link poemEditSchema}.
  *
  * `readCount` and `featured` come along unchanged and are both read-only in
  * practice: nothing an author sends sets them, and `featured` is writable only
@@ -335,6 +388,13 @@ const studioPoemCoreSchema = poemCoreSchema.omit({ publishedAt: true }).extend({
       "The last decision an editor took on this poem, or null if nobody has " +
       "decided on one yet — which is every draft and everything still waiting " +
       "in the queue for the first time.",
+  }),
+  lastEdit: poemEditSchema.nullable().meta({
+    description:
+      "Who last saved this poem's text and which version it is on — for " +
+      "editors and above. Null for anybody else, the poem's own author " +
+      "included: what an editor changed before publishing is editorial " +
+      "working material, not part of the poem.",
   }),
   submittedAt: z.iso
     .datetime()
@@ -464,6 +524,102 @@ export const studioPoemPageSchema = studioPoemList.page.meta({
 });
 
 export type StudioPoemPage = z.infer<typeof studioPoemPageSchema>;
+
+/**
+ * The longest history one poem keeps.
+ *
+ * A version is a whole snapshot, so a trail grows with every save rather than
+ * with how much a poem actually changes — and this database has half a gigabyte
+ * to hold the whole site. The cap is what stops one heavily worked poem from
+ * being an unbounded number of rows: past it, the poem keeps its original and its
+ * hundred most recent versions, and the middle is dropped.
+ *
+ * A hundred, because that is far past any poem's real editing history and still
+ * a bounded cost — a hundred versions of a typical poem is under a hundred
+ * kilobytes. Ordinary use will never reach it; what reaches it is a client stuck
+ * in a loop, which is the case worth having a ceiling for.
+ *
+ * **It is not a defence against abuse, and should not be mistaken for one.** An
+ * account determined to fill the database writes new poems rather than new
+ * versions of one. That is rate limiting's job, and the roadmap has it in Phase
+ * 6.
+ *
+ * Exported so the trail endpoint can say what its own limit is.
+ */
+export const POEM_REVISIONS_MAX = 100;
+
+/**
+ * One version of a poem's text, as `GET /poems/{id}/revisions` lists them.
+ *
+ * The whole text and not a diff, which is how the rows are stored: a version is
+ * readable on its own, and comparing two of them is the client's business rather
+ * than a format the server imposes.
+ *
+ * Version 1 is the original, written when the poem was created and credited to
+ * its author, so the trail always begins with what the author wrote and never
+ * with somebody else's correction of it. The numbers are stable for the life of
+ * the poem — a version an editor refers to today means the same row next year —
+ * which is exactly what {@link POEM_REVISIONS_MAX} makes necessary: pruning
+ * shifts positions, so position cannot be the number.
+ */
+export const poemRevisionSchema = z
+  .object({
+    id: z.uuid().meta({ description: "UUIDv7 — time-ordered, so it sorts by when it was saved." }),
+    version: z
+      .number()
+      .int()
+      .min(1)
+      .meta({
+        description:
+          "Which version this is. 1 is the original. The numbers count up but " +
+          "need not run consecutively — a poem past the history limit has had the " +
+          "middle of its trail pruned, and the gap is where those versions were.",
+        example: 1,
+      }),
+    editor: poemAuthorSchema.meta({
+      description: "Who saved this version — the poem's author on version 1.",
+    }),
+    ...poemCoreSchema.pick({ title: true, subtitle: true }).shape,
+    body: z.string().meta({
+      description: "The poem as it stood at this version, newline-separated.",
+      example: "Тінь над полем лягла,\nі вітер затих.",
+    }),
+    editedAt: z.iso.datetime().meta({ description: "When this version was saved." }),
+  })
+  .meta({ description: "One version of a poem's text, and who wrote it." });
+
+export type PoemRevision = z.infer<typeof poemRevisionSchema>;
+
+/**
+ * What `GET /poems/{id}/revisions` answers with — every version a poem has had,
+ * oldest first, which is the order they happened in.
+ *
+ * An envelope rather than a bare array, so the response is an object like every
+ * other one the API sends and can grow a field later without becoming a
+ * different kind of thing.
+ *
+ * At most {@link POEM_REVISIONS_MAX} entries. A poem that has been rewritten
+ * more often than that keeps its original and its most recent versions, so the
+ * first entry is still what the author wrote and the numbers jump where the
+ * middle used to be.
+ *
+ * Deliberately **not** built with `defineList` in ./list, unlike the four paged
+ * endpoints. A trail is small, has one meaningful ordering, and offers nothing
+ * to search or filter by; the framework's `page`/`perPage`/`sort`/`order` would
+ * be four parameters that either do nothing or let a caller read the history of
+ * one poem out of order. Nothing is added ahead of need.
+ */
+export const poemRevisionsSchema = z
+  .object({
+    items: z.array(poemRevisionSchema).meta({
+      description:
+        "Every version, oldest first — so the first entry is the poem as its " +
+        "author wrote it and the last is the poem as it reads now.",
+    }),
+  })
+  .meta({ description: "The full history of a poem's text. Editors and above." });
+
+export type PoemRevisions = z.infer<typeof poemRevisionsSchema>;
 
 /**
  * The three statuses a client may ask for, out of the four the column holds.

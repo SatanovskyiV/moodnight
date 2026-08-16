@@ -349,9 +349,62 @@ const REVIEWS: {
   },
 ];
 
+/**
+ * The poems an editor has been into since their author submitted them.
+ *
+ * Every poem gets a version 1 automatically — its own text, credited to its own
+ * author — because that is what the table promises and what the migration
+ * backfilled for poems written before it existed. This list is the other half:
+ * the poems that are *not* still as they were sent, which is the case the trail
+ * exists for and the only one worth seeding an example of.
+ *
+ * Each entry is the poem **as its author wrote it**, and it becomes version 1.
+ * The text in `POEMS` above is then the newest version and is credited to the
+ * editor named here — which keeps the invariant the API depends on: the last
+ * version always says what the poem says now.
+ *
+ * One entry, on the poem sitting in the queue, so `/admin/queue` has a row whose
+ * `lastEdit` names somebody other than its author and whose version is past 1.
+ */
+const EDITS: {
+  poemSlug: string;
+  editorEmail: string;
+  editedDaysAgo: number;
+  title: string;
+  subtitle: string | null;
+  body: string;
+}[] = [
+  {
+    poemSlug: "chekannia",
+    editorEmail: "editor@moodnight.dev",
+    editedDaysAgo: 1,
+    title: "Чекання",
+    subtitle: "чернетка на розгляді",
+    body: `Свіча горить, а лист іще не дописаний.
+Хтось прочитає — колись.`,
+  },
+];
+
 /** `publishedDaysAgo` as a real timestamp, counted back from now. */
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * When a poem's first version was written — a day before it first asked to be
+ * read, or a day before it was published if it never went through the queue.
+ *
+ * Derived rather than a seventh column on every poem above, and it cannot come
+ * from the row's own `created_at`: these poems claim to be days or weeks old
+ * while their rows are inserted by this script a moment ago. A version 1 stamped
+ * `now()` would sort *after* the editor's pass on the poem below, and the trail
+ * would read backwards.
+ */
+function writtenDaysAgo(poem: {
+  submittedDaysAgo: number | null;
+  publishedDaysAgo: number | null;
+}) {
+  return (poem.submittedDaysAgo ?? poem.publishedDaysAgo ?? 0) + 1;
 }
 
 async function seed(): Promise<void> {
@@ -457,6 +510,49 @@ async function seed(): Promise<void> {
       // is a no-op, which is what makes this safe on the first run too.
       await prisma.poemTag.deleteMany({ where: { poemId: saved.id } });
       await prisma.poemTag.createMany({ data: links });
+
+      // The poem's history. Rewritten wholesale for the reason the reviews are:
+      // a version has no natural unique key, so a plain `create` would add a
+      // duplicate on every run.
+      const edit = EDITS.find((one) => one.poemSlug === poem.slug);
+      const editorId = edit && authorIds.get(edit.editorEmail);
+
+      if (edit && !editorId) {
+        throw new Error(`An edit of "${poem.slug}" names an editor nobody seeded.`);
+      }
+
+      // Version 1 is the poem as its author wrote it — which is the text above
+      // unless somebody has since been into it, in which case it is the text the
+      // edit carries and the poem's own becomes the newest version.
+      const original = edit ?? { title: poem.title, subtitle: poem.subtitle, body: poem.body };
+
+      await prisma.poemRevision.deleteMany({ where: { poemId: saved.id } });
+      await prisma.poemRevision.createMany({
+        data: [
+          {
+            poemId: saved.id,
+            editorId: authorId,
+            version: 1,
+            title: original.title,
+            subtitle: original.subtitle,
+            body: original.body,
+            createdAt: daysAgo(writtenDaysAgo(poem)),
+          },
+          ...(edit && editorId
+            ? [
+                {
+                  poemId: saved.id,
+                  editorId,
+                  version: 2,
+                  title: poem.title,
+                  subtitle: poem.subtitle,
+                  body: poem.body,
+                  createdAt: daysAgo(edit.editedDaysAgo),
+                },
+              ]
+            : []),
+        ],
+      });
     }
 
     for (const review of REVIEWS) {
@@ -486,10 +582,13 @@ async function seed(): Promise<void> {
     const published = POEMS.filter((poem) => poem.status === PoemStatus.PUBLISHED).length;
 
     console.log(
-      `Seeded ${USERS.length} users, ${TAGS.length} tags, ${POEMS.length} poems ` +
+      `Seeded ${USERS.length} users, ${TAGS.length} tags, ${POEMS.length} poems, ` +
+        `${POEMS.length + EDITS.length} versions of them ` +
         `and ${REVIEWS.length} moderation decision(s) ` +
         `(${published} poems published — the rest are a draft, one awaiting review and ` +
-        "one rejected, so GET /poems should answer with the published count and no more).\n" +
+        "one rejected, so GET /poems should answer with the published count and no more; " +
+        `${EDITS.length} poem has been edited since it was submitted, so its \`lastEdit\` ` +
+        "names an editor rather than its author).\n" +
         `Password for every account: ${DEV_PASSWORD}`,
     );
   } finally {

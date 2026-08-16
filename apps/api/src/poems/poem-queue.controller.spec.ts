@@ -15,6 +15,7 @@ import {
 } from "../testing/auth-harness";
 import {
   createPrismaMock,
+  editRow,
   OTHER_USER_ID,
   ownershipRow,
   POEM_ID,
@@ -556,6 +557,54 @@ describe("Moderation queue endpoints", () => {
       expect(body.review).toMatchObject({
         action: "REJECT",
         reviewer: { penName: "Орися Вечірня" },
+      });
+    });
+  });
+
+  /**
+   * The queue is where `lastEdit` is actually read: an editor scanning what is
+   * waiting wants to know which of these a colleague has already been into, and
+   * which are still as their authors sent them.
+   *
+   * The visibility rule itself is exercised from both ends in the studio's spec,
+   * where an author can ask about the same poem. Here the only caller is a
+   * moderator by definition, so what is worth pinning is that the field survives
+   * the summary shape — the row a queue renders is not the poem an editor opens,
+   * and `teaser` is not the only difference between them.
+   */
+  describe("the last edit on a queued poem", () => {
+    it("rides along on the rows of the queue", async () => {
+      prisma.poem.findMany.mockResolvedValue([
+        queuedPoemRow({
+          revisions: [editRow({ version: 3, editor: reviewRow().reviewer })],
+        }),
+      ]);
+
+      const { body } = await request(app.getHttpServer())
+        .get("/admin/queue")
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.items[0].lastEdit).toMatchObject({
+        version: 3,
+        editor: { penName: "Орися Вечірня" },
+      });
+    });
+
+    /**
+     * A poem nobody has touched since it was written still answers — with its
+     * author and version 1, which is the honest reading of "who last wrote this
+     * text" and the baseline the case above is a departure from.
+     */
+    it("names the author on a poem still as it was submitted", async () => {
+      const { body } = await request(app.getHttpServer())
+        .get("/admin/queue")
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.items[0].lastEdit).toMatchObject({
+        version: 1,
+        editor: { penName: "Тарас Шевченко" },
       });
     });
   });

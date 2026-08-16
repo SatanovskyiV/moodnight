@@ -1209,6 +1209,55 @@
         "summary": "Send a poem back",
         "tags": ["poems"]
       }
+    },
+    "/poems/{id}/revisions": {
+      "get": {
+        "description": "Every version of a poem's text, oldest first, with the account that saved each. For editors and above.\n\nAn editor may fix a line before approving a poem and keep fixing it afterwards, so the text on the site is not always the text its author submitted. This is the record of that: version 1 is the poem as its author wrote it, the last is the poem as it reads now, and every one in between names whoever changed it.\n\nEach entry carries the whole text rather than a diff, so any two of them can be compared however a client chooses to.\n\nAt most 100 entries. A poem rewritten more often than that keeps its original and its most recent versions, and the middle is dropped — so the numbers count up without necessarily running consecutively, and a jump is where the pruned versions were. The first entry is always version 1.\n\n**Not for the author.** What an editor changed before publishing is editorial working material — it is not public, and it is not shown to the poem's author either, who is refused here rather than given an emptier answer.\n\nUnpaginated: a trail is one poem's history and is read in one order.",
+        "operationId": "listPoemRevisions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The poem's id.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every version, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PoemRevisions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The id is not a UUIDv7."
+          },
+          "401": {
+            "description": "No valid access token."
+          },
+          "403": {
+            "description": "The account's role is not high enough."
+          },
+          "404": {
+            "description": "No poem has that id."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read a poem's history",
+        "tags": ["poems"]
+      }
     }
   },
   "info": {
@@ -1798,6 +1847,103 @@
         "additionalProperties": false,
         "description": "The last moderation decision taken on a poem."
       },
+      "PoemEdit": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "Which version the poem's text is on. 1 is the original, as its author first wrote it; anything higher means it has been rewritten that many times. It counts every version the poem has ever had, not how many are still on record — a long-lived poem may report 137 with only the most recent hundred kept.",
+            "example": 2
+          },
+          "editor": {
+            "description": "Who saved this version — the poem's author on version 1, and whoever made the change on every one after.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoemAuthor"
+              }
+            ]
+          },
+          "editedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When this version was saved."
+          }
+        },
+        "required": ["version", "editor", "editedAt"],
+        "additionalProperties": false,
+        "description": "Who last wrote a poem's text, and which version it is on."
+      },
+      "PoemRevision": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "UUIDv7 — time-ordered, so it sorts by when it was saved."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "description": "Which version this is. 1 is the original. The numbers count up but need not run consecutively — a poem past the history limit has had the middle of its trail pruned, and the gap is where those versions were.",
+            "example": 1
+          },
+          "editor": {
+            "description": "Who saved this version — the poem's author on version 1.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoemAuthor"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Тінь над полем"
+          },
+          "subtitle": {
+            "nullable": true,
+            "description": "The line under the title, if any.",
+            "example": "із циклу «Спалені листи»",
+            "type": "string",
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "description": "The poem as it stood at this version, newline-separated.",
+            "example": "Тінь над полем лягла,\nі вітер затих."
+          },
+          "editedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "When this version was saved."
+          }
+        },
+        "required": ["id", "version", "editor", "title", "subtitle", "body", "editedAt"],
+        "additionalProperties": false,
+        "description": "One version of a poem's text, and who wrote it."
+      },
+      "PoemRevisions": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoemRevision"
+            },
+            "description": "Every version, oldest first — so the first entry is the poem as its author wrote it and the last is the poem as it reads now."
+          }
+        },
+        "required": ["items"],
+        "additionalProperties": false,
+        "description": "The full history of a poem's text. Editors and above."
+      },
       "StudioPoem": {
         "type": "object",
         "properties": {
@@ -1869,6 +2015,15 @@
               }
             ]
           },
+          "lastEdit": {
+            "nullable": true,
+            "description": "Who last saved this poem's text and which version it is on — for editors and above. Null for anybody else, the poem's own author included: what an editor changed before publishing is editorial working material, not part of the poem.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoemEdit"
+              }
+            ]
+          },
           "submittedAt": {
             "nullable": true,
             "description": "When the poem last entered the moderation queue, or null if it never has. Not cleared when it leaves — it says when the poem last asked to be read, which stays true afterwards.",
@@ -1905,6 +2060,7 @@
           "status",
           "publishedAt",
           "review",
+          "lastEdit",
           "submittedAt",
           "createdAt",
           "updatedAt",
@@ -2076,6 +2232,15 @@
               }
             ]
           },
+          "lastEdit": {
+            "nullable": true,
+            "description": "Who last saved this poem's text and which version it is on — for editors and above. Null for anybody else, the poem's own author included: what an editor changed before publishing is editorial working material, not part of the poem.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PoemEdit"
+              }
+            ]
+          },
           "submittedAt": {
             "nullable": true,
             "description": "When the poem last entered the moderation queue, or null if it never has. Not cleared when it leaves — it says when the poem last asked to be read, which stays true afterwards.",
@@ -2117,6 +2282,7 @@
           "status",
           "publishedAt",
           "review",
+          "lastEdit",
           "submittedAt",
           "createdAt",
           "updatedAt",

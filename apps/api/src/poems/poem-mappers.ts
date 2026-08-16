@@ -1,5 +1,7 @@
 import {
+  type PoemEdit,
   type PoemReview,
+  type PoemRevision,
   type StudioPoem,
   type StudioPoemSummary,
   TEASER_LINES,
@@ -7,24 +9,29 @@ import {
   type UserRole,
 } from "@moodnight/shared";
 
-import { maySeeReviewer } from "./poem-access";
-import type { StudioPoemRow } from "./poem-fields";
+import { maySeeEdits, maySeeReviewer } from "./poem-access";
+import type { RevisionRow, StudioPoemRow } from "./poem-fields";
 
 /**
  * Rows out of Prisma, as the wire describes them — the shared half of what four
  * services would otherwise each write.
  *
- * Three conversions happen here and nowhere else. Prisma's `Date`s become the
+ * Four conversions happen here and nowhere else. Prisma's `Date`s become the
  * ISO strings the schemas in @moodnight/shared promise, because JSON has no date
  * type; the join rows on `tags` are flattened to the tags themselves, because
  * `{ tag: { name, slug } }` is a fact about how the many-to-many is stored and
- * not something a client should have to know; and the at-most-one row of
- * `reviews` becomes the poem's last decision, with the reviewer's name on it or
- * without, according to who is asking.
+ * not something a client should have to know; the at-most-one row of `reviews`
+ * becomes the poem's last decision, with the reviewer's name on it or without,
+ * according to who is asking; and the at-most-one row of `revisions` becomes
+ * `lastEdit`, together with the count beside it, or becomes nothing at all for
+ * a caller who may not be told.
  *
- * That last one is the only place on the site where the *contents* of a response
- * depend on the caller rather than only which rows they get, which is why every
- * function below takes a role and why {@link toReview} is the one that reads it.
+ * Those last two are the only places on the site where the *contents* of a
+ * response depend on the caller rather than only which rows they get, which is
+ * why every function below takes a role and why {@link toReview} and
+ * {@link toLastEdit} are the two that read it. They draw the line differently —
+ * one hides a name inside a field, the other hides the field — and each says why
+ * on its own doc comment.
  *
  * The public path's own mappers stay in ./poems.service.ts: they answer a
  * different shape (no `status`, non-nullable `publishedAt`) to a different
@@ -87,6 +94,66 @@ function toReview(rows: StudioPoemRow["reviews"], role: UserRole): PoemReview | 
 }
 
 /**
+ * Which version the poem's text is on and whose hand it was, or null for a
+ * caller who may not be told.
+ *
+ * **The whole field goes, not a name inside it**, which is the difference from
+ * {@link toReview} and the reason this is a separate function rather than one
+ * more line in that one. A review is built for everybody because the author is
+ * owed the verdict whatever else they may not see, so only `reviewer` is
+ * withheld. Here there is no owed half: that a poem is on its third version is
+ * itself the editorial fact, and rule 6 in ./poem-access withholds all of it.
+ *
+ * The null is therefore two answers at once — "you may not be told" and "there
+ * are no versions on record" — and nothing downstream needs to tell them apart:
+ * both mean the same thing to a client, which is that there is nothing to show.
+ * The second should not arise at all, since a poem's first version is written in
+ * the same statement as the poem and the backfill in 20260816120000 gave one to
+ * every poem that predates the table. It is handled rather than asserted because
+ * a mapper is the wrong place to discover it.
+ */
+function toLastEdit(rows: StudioPoemRow["revisions"], role: UserRole): PoemEdit | null {
+  const [latest] = rows;
+
+  if (!latest || !maySeeEdits(role)) {
+    return null;
+  }
+
+  return {
+    version: latest.version,
+    editor: latest.editor,
+    editedAt: latest.createdAt.toISOString(),
+  };
+}
+
+/**
+ * The full trail, each row carrying the number it was given when it was written.
+ *
+ * The number is a column rather than the row's position, which is what lets a
+ * pruned trail stay honest: a poem past `POEM_REVISIONS_MAX` has lost the middle
+ * of its history, so the versions arrive as 1, 52, 53 … and the jump is where
+ * those versions were. Numbering by position would quietly renumber the
+ * survivors and present a hundred-row trail as though it were the whole story.
+ *
+ * No role parameter, unlike everything else in this file. Who may see a version
+ * at all is the `@Roles("EDITOR")` floor on the controller, so by the time rows
+ * reach this function the question has been answered — and answered by a refusal
+ * rather than by an emptier response, which is the right shape for an endpoint
+ * that exists only to serve them.
+ */
+export function toRevisions(rows: RevisionRow[]): PoemRevision[] {
+  return rows.map((row) => ({
+    id: row.id,
+    version: row.version,
+    editor: row.editor,
+    title: row.title,
+    subtitle: row.subtitle,
+    body: row.body,
+    editedAt: row.createdAt.toISOString(),
+  }));
+}
+
+/**
  * Everything the studio's two shapes share, which is everything but the text.
  *
  * Takes the caller's role, which none of the public path's mappers do: this is
@@ -113,6 +180,7 @@ function toStudioCore(row: StudioPoemRow, role: UserRole) {
     readCount: row.readCount,
     featured: row.featured,
     review: toReview(row.reviews, role),
+    lastEdit: toLastEdit(row.revisions, role),
   };
 }
 

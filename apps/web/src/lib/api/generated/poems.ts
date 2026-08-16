@@ -33,6 +33,7 @@ import type {
   ListStudioPoemsParams,
   Poem,
   PoemPage,
+  PoemRevisions,
   RejectPoem,
   StudioPoem,
   StudioPoemPage,
@@ -1622,3 +1623,179 @@ export const useRejectPoem = <TError = void, TContext = unknown>(
 > => {
   return useMutation(getRejectPoemMutationOptions(options), queryClient);
 };
+export type listPoemRevisionsResponse200 = {
+  data: PoemRevisions;
+  status: 200;
+};
+
+export type listPoemRevisionsResponse400 = {
+  data: void;
+  status: 400;
+};
+
+export type listPoemRevisionsResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type listPoemRevisionsResponse403 = {
+  data: void;
+  status: 403;
+};
+
+export type listPoemRevisionsResponse404 = {
+  data: void;
+  status: 404;
+};
+
+export type listPoemRevisionsResponseSuccess = listPoemRevisionsResponse200 & {
+  headers: Headers;
+};
+export type listPoemRevisionsResponseError = (
+  | listPoemRevisionsResponse400
+  | listPoemRevisionsResponse401
+  | listPoemRevisionsResponse403
+  | listPoemRevisionsResponse404
+) & {
+  headers: Headers;
+};
+
+export type listPoemRevisionsResponse =
+  listPoemRevisionsResponseSuccess | listPoemRevisionsResponseError;
+
+export const getListPoemRevisionsUrl = (id: string) => {
+  return `/poems/${id}/revisions`;
+};
+
+/**
+ * Every version of a poem's text, oldest first, with the account that saved each. For editors and above.
+ *
+ * An editor may fix a line before approving a poem and keep fixing it afterwards, so the text on the site is not always the text its author submitted. This is the record of that: version 1 is the poem as its author wrote it, the last is the poem as it reads now, and every one in between names whoever changed it.
+ *
+ * Each entry carries the whole text rather than a diff, so any two of them can be compared however a client chooses to.
+ *
+ * At most 100 entries. A poem rewritten more often than that keeps its original and its most recent versions, and the middle is dropped — so the numbers count up without necessarily running consecutively, and a jump is where the pruned versions were. The first entry is always version 1.
+ *
+ * **Not for the author.** What an editor changed before publishing is editorial working material — it is not public, and it is not shown to the poem's author either, who is refused here rather than given an emptier answer.
+ *
+ * Unpaginated: a trail is one poem's history and is read in one order.
+ * @summary Read a poem's history
+ */
+export const listPoemRevisions = async (
+  id: string,
+  options?: Parameters<typeof request>[1],
+): Promise<listPoemRevisionsResponse> => {
+  return request<listPoemRevisionsResponse>(getListPoemRevisionsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPoemRevisionsQueryKey = (id: string) => {
+  return [`/poems/${id}/revisions`] as const;
+};
+
+export const getListPoemRevisionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPoemRevisions>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemRevisions>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPoemRevisionsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listPoemRevisions>>> = ({ signal }) =>
+    listPoemRevisions(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listPoemRevisions>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListPoemRevisionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPoemRevisions>>
+>;
+export type ListPoemRevisionsQueryError = void;
+
+export function useListPoemRevisions<
+  TData = Awaited<ReturnType<typeof listPoemRevisions>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemRevisions>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPoemRevisions>>,
+          TError,
+          Awaited<ReturnType<typeof listPoemRevisions>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListPoemRevisions<
+  TData = Awaited<ReturnType<typeof listPoemRevisions>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemRevisions>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPoemRevisions>>,
+          TError,
+          Awaited<ReturnType<typeof listPoemRevisions>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListPoemRevisions<
+  TData = Awaited<ReturnType<typeof listPoemRevisions>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemRevisions>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Read a poem's history
+ */
+
+export function useListPoemRevisions<
+  TData = Awaited<ReturnType<typeof listPoemRevisions>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listPoemRevisions>>, TError, TData>>;
+    request?: SecondParameter<typeof request>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListPoemRevisionsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

@@ -3,6 +3,8 @@ import { Module } from "@nestjs/common";
 import { PoemQueueController } from "./poem-queue.controller";
 import { PoemQueueService } from "./poem-queue.service";
 import { PoemReviewController } from "./poem-review.controller";
+import { PoemRevisionsController } from "./poem-revisions.controller";
+import { PoemRevisionsService } from "./poem-revisions.service";
 import { PoemStudioController } from "./poem-studio.controller";
 import { PoemStudioService } from "./poem-studio.service";
 import { PoemWritesController } from "./poem-writes.controller";
@@ -11,7 +13,7 @@ import { PoemsController } from "./poems.controller";
 import { PoemsService } from "./poems.service";
 
 /**
- * Everything a poem is reachable through, in four services that are kept apart
+ * Everything a poem is reachable through, in five services that are kept apart
  * on purpose.
  *
  * Each one guarantees a single thing about every query it makes, and the split
@@ -33,11 +35,16 @@ import { PoemsService } from "./poems.service";
  *   explains it — in one transaction. Reaching it through a service that writes
  *   only the poem would mean "a rejection always carries its reason" stopped
  *   being enforced and started being remembered.
+ * - **`PoemRevisionsService`** reads the one table that is not `poems` — every
+ *   version of a poem's text and who saved it. Apart from the four above because
+ *   it is the only one whose answer is editorial rather than about a poem as
+ *   such: it has no base constraint and needs none, since the `EDITOR` floor on
+ *   its controller is the whole of who may ask.
  *
  * They share their column lists (./poem-fields), their mappers (./poem-mappers)
  * and their authorisation rules (./poem-access), and no code path.
  *
- * Ten routes across five controllers, three of them on `/poems`, because a
+ * Eleven routes across six controllers, four of them on `/poems`, because a
  * controller declares exactly one thing this module cares about — the role
  * floor — and two floors in one class means a handler that forgets to declare
  * its own inherits the gentler one, which is the failure worth designing
@@ -54,7 +61,14 @@ import { PoemsService } from "./poems.service";
     PoemStudioController,
     PoemQueueController,
     PoemReviewController,
+    PoemRevisionsController,
   ],
-  providers: [PoemsService, PoemWritesService, PoemStudioService, PoemQueueService],
+  providers: [
+    PoemsService,
+    PoemWritesService,
+    PoemStudioService,
+    PoemQueueService,
+    PoemRevisionsService,
+  ],
 })
 export class PoemsModule {}

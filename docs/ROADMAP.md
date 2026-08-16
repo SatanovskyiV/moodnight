@@ -109,10 +109,18 @@ Poem      id, slug, title, subtitle, body, authorId, readCount,
 Tag       id, name, slug              PoemTag       poemId, tagId
 Reaction  poemId, userId, kind: KINDLE|LAMENT   — unique(poemId, userId, kind)
 Review    poemId, reviewerId, action: APPROVE|REJECT, note, createdAt
+PoemRevision  poemId, editorId, version, title, subtitle, body, createdAt
+              — unique(poemId, version)
 Collection / CollectionPoem            — the "Збірки" nav item
 ```
 
 Two things worth naming carefully: `role` is the permission (`ROOT|ADMIN|EDITOR|AUTHOR`) while `roleTitle` is the decorative display string from the prototype ("Хранитель слова", "Мандрівний поет"). And `readCount` stays a denormalized counter on `Poem` — do not count rows.
+
+`PoemRevision` is the second audit trail and answers a different question from `Review`: that one records the decisions taken *about* a poem, this one records the poem itself changing. An editor may fix a line before approving and keep fixing it afterwards, so every write that changes `title`, `subtitle` or `body` leaves a whole snapshot behind — version 1 is written with the poem and credited to its author, so the original survives everything done to it after.
+
+A version is a whole snapshot, so a trail grows with how often somebody saves rather than with how much a poem really changes — and the whole site has half a gigabyte. `POEM_REVISIONS_MAX` (100) is the ceiling on one poem's share: past it the poem keeps its original and its most recent versions, and the middle is pruned. That is what makes `version` a stored column with a unique index rather than the row's position — pruning shifts positions, so a version an editor referred to yesterday would mean a different row today. Gaps in the numbering are the prune, visible. The cap is **not** a defence against abuse, and should not be read as one: an account out to fill the database writes new poems rather than new versions of one, which is rate limiting's job in Phase 6.
+
+Both trails are **editors and above only**: the studio and queue shapes carry a `lastEdit` (who last saved the text, and which version it is on) that is null for anybody below, the poem's own author included, and the full history at `GET /poems/{id}/revisions` refuses them outright. The reasoning, and the cost of that second half, is written out on `maySeeEdits` in `apps/api/src/poems/poem-access.ts`.
 
 `ROOT` is the site owner and a singleton — the database allows one such row and no more. Phase 3's guard is what decides who may *assign* it; the index only guarantees that no two accounts ever hold it at once.
 
@@ -170,7 +178,7 @@ Each phase ships and deploys on its own. The shadcn line is everything that phas
   *shadcn: `badge` (tags), `avatar` (author), `skeleton` (loading).*
 - **Phase 3 — Auth.** ~~Register / login / refresh / logout / me. Argon2 hashing, short-lived JWT + httpOnly refresh cookie, roles guard.~~ **The API half is done** — see the Authentication section of [README.md](../README.md). Still to do: wire up the Phase 1 form with `react-hook-form` + `@hookform/resolvers/zod`, resolving against **the same zod schema `packages/shared` gives NestJS's validation pipe** — one schema, validated on both sides. Email verification via Resend. Google OAuth as a later Passport strategy. A password-reset flow, which is also what `PATCH /users/:id` deliberately does *not* provide.
   *shadcn: `form`, `sonner` (toasts), `dropdown-menu` (user menu).*
-- **Phase 4 — Writing + moderation.** Poem editor, the `/studio/poems` dashboard, `DRAFT → PENDING_REVIEW → PUBLISHED|REJECTED` transitions, `/admin/queue` for editors, `Review` audit trail, notification emails. The shells are already in place (see "The three areas" above); this phase fills `/studio/poems` and adds the queue as a second row in `links.ts`. It is also where shadcn earns its place — the queue is a real data table and none of it gets hand-built.
+- **Phase 4 — Writing + moderation.** Poem editor, the `/studio/poems` dashboard, `DRAFT → PENDING_REVIEW → PUBLISHED|REJECTED` transitions, `/admin/queue` for editors, the `Review` and `PoemRevision` audit trails, notification emails. The shells are already in place (see "The three areas" above); this phase fills `/studio/poems` and adds the queue as a second row in `links.ts`. It is also where shadcn earns its place — the queue is a real data table and none of it gets hand-built.
   *shadcn: `table` (+ TanStack Table), `dialog`, `alert-dialog`, `textarea`, `select`, `tabs`.*
 - **Phase 5 — Engagement.** Persist Kindle/Lament (one per user per kind, replacing the local `useState` at [app.jsx:177](../prototype/app.jsx#L177)), read counting, collections, author profiles, search. The lists' `search` is a case-insensitive `contains`, which is right for names and wrong for poem bodies — public search over the poems is the point at which Postgres full-text earns its place, alongside rather than inside the list framework.
   *shadcn: `tooltip`, `popover`, `command` (search).*

@@ -7,8 +7,11 @@ import {
   type ListDefinition,
   loginSchema,
   poemAuthorSchema,
+  poemEditSchema,
   poemPageSchema,
   poemReviewSchema,
+  poemRevisionSchema,
+  poemRevisionsSchema,
   poemSchema,
   poemSummarySchema,
   poemTagSchema,
@@ -75,6 +78,17 @@ const openApiSchemas = {
   // ones — so the document reuses that component instead of naming a second
   // shape with the same five properties.
   PoemReview: poemReviewSchema,
+  // Nested by both studio shapes as `lastEdit`, and registered for the same
+  // reason `PoemReview` is. Its `editor` is a `PoemAuthor` too — the third use
+  // of that component, and the third time the answer to "what may be said about
+  // an account" is the same five columns.
+  PoemEdit: poemEditSchema,
+  // The trail behind `lastEdit`, from `GET /poems/{id}/revisions`. Both halves
+  // are named: `PoemRevision` because a client renders one version at a time and
+  // wants a type for it, and `PoemRevisions` because the envelope is what the
+  // endpoint answers with.
+  PoemRevision: poemRevisionSchema,
+  PoemRevisions: poemRevisionsSchema,
   // The write path, and a third shape for the same model — which the document
   // should say plainly rather than leave a client to discover. `StudioPoem`
   // carries `status` and a nullable `publishedAt` because that is what a poem

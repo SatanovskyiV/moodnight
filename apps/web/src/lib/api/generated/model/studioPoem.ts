@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.0.0
  */
 import type { PoemAuthor } from "./poemAuthor";
+import type { PoemEdit } from "./poemEdit";
 import type { PoemReview } from "./poemReview";
 import type { PoemTag } from "./poemTag";
 import type { StudioPoemStatus } from "./studioPoemStatus";
@@ -53,6 +54,8 @@ export interface StudioPoem {
   publishedAt: string | null;
   /** The last decision an editor took on this poem, or null if nobody has decided on one yet — which is every draft and everything still waiting in the queue for the first time. */
   review: PoemReview | null;
+  /** Who last saved this poem's text and which version it is on — for editors and above. Null for anybody else, the poem's own author included: what an editor changed before publishing is editorial working material, not part of the poem. */
+  lastEdit: PoemEdit | null;
   /**
    * When the poem last entered the moderation queue, or null if it never has. Not cleared when it leaves — it says when the poem last asked to be read, which stays true afterwards.
    * @nullable

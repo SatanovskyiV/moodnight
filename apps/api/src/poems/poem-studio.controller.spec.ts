@@ -18,6 +18,7 @@ import {
   POEM_ID,
   type PrismaMock,
   queuedPoemRow,
+  editRow,
   reviewRow,
   studioPoemRow,
   USER_ID,
@@ -403,6 +404,96 @@ describe("Studio poem endpoints", () => {
         .expect(200);
 
       expect(body.items[0].review.reviewer).toMatchObject({ penName: "Орися Вечірня" });
+    });
+  });
+
+  /**
+   * The second field whose contents depend on the caller — and the one that
+   * draws the line further than the review does.
+   *
+   * A review withholds a name and keeps the verdict, because an author is owed
+   * something they can act on. `lastEdit` withholds all of itself, including
+   * from the poem's own author: rule 6 in ./poem-access, where the cost of that
+   * choice is written out. These cases are what would fail if the two rules were
+   * ever collapsed into one predicate on the grounds that they look alike.
+   */
+  describe("the last edit on a poem", () => {
+    /** A poem an editor has rewritten once since its author wrote it. */
+    const edited = (authorId = USER_ID) =>
+      studioPoemRow({
+        authorId,
+        revisions: [editRow({ version: 2, editor: reviewRow().reviewer })],
+      });
+
+    it("tells an editor which version the poem is on and whose hand it was", async () => {
+      prisma.poem.findUnique.mockResolvedValue(edited());
+
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.lastEdit).toMatchObject({
+        version: 2,
+        editedAt: "2026-02-20T07:08:09.000Z",
+        editor: { penName: "Орися Вечірня" },
+      });
+    });
+
+    /** Rule 6, and the half that is a real cost rather than an obvious one. */
+    it("tells the author nothing, on their own poem", async () => {
+      prisma.poem.findUnique.mockResolvedValue(edited());
+
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asAuthor))
+        .expect(200);
+
+      expect(body.lastEdit).toBeNull();
+      // Not merely nulled: neither the editor's name nor the count may have
+      // reached the response by some other route.
+      expect(JSON.stringify(body)).not.toContain("Орися");
+    });
+
+    /** Version 1 is the poem as written, and it is still an answer worth giving. */
+    it("says version 1 for a poem nobody has rewritten", async () => {
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.lastEdit).toMatchObject({ version: 1, editor: { penName: "Тарас Шевченко" } });
+    });
+
+    it("never carries the editor's permission", async () => {
+      prisma.poem.findUnique.mockResolvedValue(edited());
+
+      const { body } = await request(app.getHttpServer())
+        .get(`/studio/poems/${POEM_ID}`)
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      expect(body.lastEdit.editor.role).toBeUndefined();
+    });
+
+    /** Rides along on a list, which is where an editor actually reads it. */
+    it("appears on the rows of the dashboard for an editor, and not for an author", async () => {
+      prisma.poem.findMany.mockResolvedValue([edited(OTHER_USER_ID)]);
+
+      const { body: forEditor } = await request(app.getHttpServer())
+        .get("/studio/poems")
+        .set(...bearer(asEditor))
+        .expect(200);
+
+      prisma.poem.findMany.mockResolvedValue([edited()]);
+
+      const { body: forAuthor } = await request(app.getHttpServer())
+        .get("/studio/poems")
+        .set(...bearer(asAuthor))
+        .expect(200);
+
+      expect(forEditor.items[0].lastEdit).toMatchObject({ version: 2 });
+      expect(forAuthor.items[0].lastEdit).toBeNull();
     });
   });
 });

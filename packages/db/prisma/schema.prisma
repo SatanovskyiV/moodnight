@@ -129,8 +129,9 @@ model User {
 
   /// Whether the account may sign in. This is the site's alternative to
   /// deleting someone, and it is the operation that actually applies to a real
-  /// account: `Poem.author` and `Review.reviewer` are both `Restrict`, so
-  /// anyone who has written or moderated anything cannot be deleted at all.
+  /// account: `Poem.author`, `Review.reviewer` and `PoemRevision.editor` are
+  /// all three `Restrict`, so anyone who has written, moderated or edited
+  /// anything cannot be deleted at all.
   ///
   /// It means *cannot sign in*, and nothing more. Poems already published stay
   /// published — a URL a reader has shared is the same promise `slug` makes —
@@ -162,6 +163,7 @@ model User {
 
   poems   Poem[]
   reviews Review[]
+  edits   PoemRevision[]
 
   @@map("users")
 }
@@ -266,6 +268,8 @@ model Poem {
 
   reviews Review[]
 
+  revisions PoemRevision[]
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -360,6 +364,84 @@ enum ReviewAction {
   REJECT
 
   @@map("review_action")
+}
+
+/// One version of a poem's text, and who wrote it — the history `Poem.body`
+/// cannot keep, because a column holds one value and an edit replaces it.
+///
+/// An editor is expected to fix a line before approving and to keep fixing it
+/// afterwards (see `assertMayReach` in apps/api), which means the text readers
+/// see is not always the text its author submitted. Without these rows that
+/// difference is unrecoverable: nobody — the editors included — could say what
+/// the poem said before, or who changed it. With them the author's original
+/// survives every edit made after it.
+///
+/// **Every version is a row, the original included.** A poem's first revision is
+/// written in the same statement that creates the poem, credited to its author,
+/// which is what makes "the original" a row rather than something reconstructed
+/// by subtraction. The consequence worth relying on: the newest revision's text
+/// is always identical to the poem's current `title`/`subtitle`/`body`, and the
+/// seed and the backfill in 20260816120000_poem_revisions both honour it.
+///
+/// **Whole snapshots rather than diffs.** `Poem.body` is capped at 20 000
+/// characters by the API and this archive holds tens of poems, so a diff would
+/// save nothing measurable and cost both replay code and the ability to read a
+/// version in psql — the same argument the explicit `PoemTag` join makes.
+///
+/// **The trail is capped, and that is what makes `version` a column.** A poem
+/// past `POEM_REVISIONS_MAX` in @moodnight/shared keeps its original and its most
+/// recent versions, and the middle is pruned — so a row's position in the trail
+/// is not a number that can be relied on: prune once and what an editor called
+/// version 60 yesterday is the eleventh row today. The number therefore has to be
+/// written down at the moment the version is made and never move. A gap in the
+/// sequence is not corruption; it is the prune, visible.
+///
+/// Editors and above, always: `PoemRevision` never reaches the public read path
+/// or a poem's own author. That line is drawn in `maySeeEdits` in
+/// apps/api/src/poems/poem-access.ts.
+model PoemRevision {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  poemId String @map("poem_id") @db.Uuid
+  /// `Cascade`, as `Review` is: versions of a poem that no longer exists
+  /// describe nothing.
+  poem   Poem   @relation(fields: [poemId], references: [id], onDelete: Cascade)
+
+  /// Who wrote this version — the author for the first one, and whoever saved
+  /// the change for every one after. `Restrict` for the reason `Review.reviewer`
+  /// is: an account that has edited something cannot be deleted out from under
+  /// the record of it.
+  editorId String @map("editor_id") @db.Uuid
+  editor   User   @relation(fields: [editorId], references: [id], onDelete: Restrict)
+
+  /// Which version this is, counting from 1 — the poem as its author first wrote
+  /// it. Chosen by the API as one past the highest this poem holds, and never
+  /// reused: a pruned trail leaves gaps, and a gap is information rather than a
+  /// number waiting to be filled.
+  ///
+  /// The unique index below is what makes that safe under two editors saving at
+  /// once. Both read the same highest version, both try to write one past it, and
+  /// the second is rejected by the database rather than quietly overwriting the
+  /// first — which the API turns into a 409 telling the loser to re-read the poem.
+  /// A counter column on `Poem` would have been the alternative and is worse: it
+  /// can drift from the rows it counts, and nothing would notice.
+  version Int
+
+  /// The three columns of `Poem` this is a snapshot of, typed identically to
+  /// them so a version can hold anything the poem could.
+  title    String  @db.VarChar(200)
+  subtitle String? @db.VarChar(200)
+  body     String  @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  /// Uniqueness and ordering in one index, which is why there is no second one on
+  /// `created_at`. Every query this table serves is "one poem's versions, in
+  /// version order": newest-first with `take: 1` for the `lastEdit` on a studio or
+  /// queue row, oldest-first for the whole trail, and both are this B-tree read in
+  /// one direction or the other.
+  @@unique([poemId, version])
+  @@map("poem_revisions")
 }
 
 // "At most one ROOT" is enforced by a partial unique index —

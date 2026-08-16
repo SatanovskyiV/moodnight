@@ -24,6 +24,7 @@ import { type Actor, hasRole, type UserRole, type WritablePoemStatus } from "@mo
  *    {@link assertMaySetStatus}.
  * 4. **The front page is editorial.** {@link assertMayFeature}.
  * 5. **So is who decided.** {@link maySeeReviewer}.
+ * 6. **So is what an editor changed.** {@link maySeeEdits}.
  *
  * The role floor on a route is a different question and is answered by
  * `@Roles()` on the controller: that asks whether the caller is the *kind* of
@@ -131,5 +132,42 @@ export function assertMayFeature(role: UserRole, featured: boolean | undefined):
  * all.
  */
 export function maySeeReviewer(role: UserRole): boolean {
+  return hasRole(role, MODERATOR);
+}
+
+/**
+ * Rule 6: the versions of a poem's text, and the hands behind them, are the
+ * moderators'.
+ *
+ * The rule rule 2 makes necessary. An editor may rewrite a line before approving
+ * a poem and keep rewriting it afterwards, so `PoemRevision` exists to keep what
+ * the author wrote and to name whoever changed it — a record the site owes
+ * itself, since without it an edit is indistinguishable from the poem having
+ * always read that way.
+ *
+ * Who it is *for* is the narrower question, and the answer is the people who
+ * moderate. It is a working record — what state this poem was in when a
+ * colleague last put it down — of the same kind as the reviewer's name in rule
+ * 5, and the same argument applies one step further: on a site where every
+ * editor also writes, a version-by-version account of who touched whose stanza
+ * turns editorial work into a ledger between neighbours. So it does not reach the
+ * public path, and it does not reach the poem's own author either.
+ *
+ * That second half is a real cost and is worth naming rather than glossing: an
+ * author cannot see, through the API, that their published poem was edited. It
+ * is a deliberate choice about a small archive whose editors and authors are the
+ * same people, and the day it stops being the right one, this is the single
+ * function that changes.
+ *
+ * A predicate and not an `assert*`, for the reason {@link maySeeReviewer} is one:
+ * it narrows an answer rather than refusing a request. The trail's own endpoint
+ * *does* refuse — but that refusal is the `@Roles("EDITOR")` floor on the
+ * controller, which is a different question asked in the place that asks it.
+ *
+ * A second function rather than a call to {@link maySeeReviewer}, despite the
+ * identical body: they are two rules that happen to agree today, and one being
+ * relaxed should not silently relax the other.
+ */
+export function maySeeEdits(role: UserRole): boolean {
   return hasRole(role, MODERATOR);
 }

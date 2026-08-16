@@ -212,10 +212,50 @@ export function reviewRow(overrides: Partial<ReviewRowFixture> = {}): ReviewRowF
   };
 }
 
+/** Fixed, so a spec can name the exact ISO string an edit's `editedAt` becomes. */
+const EDITED_AT = new Date("2026-02-20T07:08:09.000Z");
+
+export interface EditRowFixture {
+  version: number;
+  createdAt: Date;
+  editor: PoemRowFixture["author"];
+}
+
+/**
+ * One version as `EDIT_FIELDS` selects it: which version it is, when it was
+ * saved and by whom, and nothing about what it said.
+ *
+ * Defaults to version 1 by the *author* of `poemRow`, which is the ordinary case
+ * and the quiet one — a poem nobody but its writer has touched. A spec about an
+ * editor's edit passes somebody else and a higher number, and the difference
+ * between the two is the whole of what `lastEdit` is for.
+ */
+export function editRow(overrides: Partial<EditRowFixture> = {}): EditRowFixture {
+  return { version: 1, createdAt: EDITED_AT, editor: poemRow().author, ...overrides };
+}
+
+export interface RevisionRowFixture extends EditRowFixture {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  body: string;
+}
+
+/**
+ * One whole version as `REVISION_FIELDS` selects it — {@link editRow} plus the
+ * text, which is what the trail endpoint answers with and `lastEdit` never
+ * carries.
+ */
+export function revisionRow(overrides: Partial<RevisionRowFixture> = {}): RevisionRowFixture {
+  const { title, subtitle, body } = poemRow();
+
+  return { ...editRow(), id: REVISION_ID, title, subtitle, body, ...overrides };
+}
+
 /**
  * A poem as the *write* path selects it — `STUDIO_FIELDS`, which is the read
- * path's columns plus the three an author cannot work without and the poem's
- * last moderation decision.
+ * path's columns plus the three an author cannot work without, the poem's last
+ * moderation decision, and the version its text is on.
  *
  * Defaults to a published poem so a spec has to say `{ status: "DRAFT" }` when
  * it means one; the alternative default would let the "a published poem cannot
@@ -224,6 +264,15 @@ export function reviewRow(overrides: Partial<ReviewRowFixture> = {}): ReviewRowF
  * `reviews` defaults to empty — the ordinary state of a poem nobody has decided
  * on — so a spec that cares about the review says `{ reviews: [reviewRow()] }`
  * and one that does not still exercises the null branch.
+ *
+ * `revisions` does **not** default to empty, and the difference is deliberate.
+ * A poem with no versions is a state the application cannot produce: the first
+ * one is written in the same statement as the poem, and the migration gave one
+ * to every poem older than the table. So the default is version 1 by the poem's
+ * own author, and a spec about an edited poem passes an `editRow` with somebody
+ * else on it and a higher number. The same argument {@link queuedPoemRow} makes
+ * below — a fixture in an impossible state proves nothing about the code that
+ * runs.
  */
 export function studioPoemRow(overrides: Partial<StudioPoemRowFixture> = {}) {
   return {
@@ -233,6 +282,7 @@ export function studioPoemRow(overrides: Partial<StudioPoemRowFixture> = {}) {
     updatedAt: UPDATED_AT,
     authorId: USER_ID,
     reviews: [] as ReviewRowFixture[],
+    revisions: [editRow()] as EditRowFixture[],
     ...overrides,
   };
 }
@@ -247,6 +297,16 @@ export interface StudioPoemRowFixture extends PoemRowFixture {
    * and the mapper is what unwraps it.
    */
   reviews: ReviewRowFixture[];
+  /**
+   * The same arrangement one relation along, for `LATEST_REVISION` — at most one
+   * row, the newest, carrying the version number `lastEdit` reports.
+   *
+   * The number is on the row rather than counted from it, so
+   * `[editRow({ version: 137 })]` is a poem written a hundred and thirty-seven
+   * times whose older versions may since have been pruned. That is a real state
+   * and not an inconsistent fixture.
+   */
+  revisions: EditRowFixture[];
   /**
    * Selected only by `PoemStudioService.findById`, which needs it to ask whether
    * the caller may reach this poem — `STUDIO_FIELDS` alone does not include it,
@@ -303,11 +363,45 @@ export function ownershipRow(
   };
 }
 
+/**
+ * The same row widened by the text and by the newest version's number —
+ * `EDITABLE_FIELDS`, which is what `update` reads before it writes.
+ *
+ * Its own helper rather than four more columns on {@link ownershipRow}, because
+ * the two answer different questions: that one is what the access rules need,
+ * and this one adds what a new version is a snapshot of and what to number it.
+ * The text defaults to `poemRow`'s, so a spec that patches a poem with the same
+ * words it already has is patching something real — which is the case that must
+ * not write a version at all.
+ *
+ * `revisions` holds the one row `EDITABLE_FIELDS` takes, so a spec about a poem
+ * near the history cap says `{ revisions: [{ version: 100 }] }` and the next
+ * write is the one that prunes.
+ */
+export function contentRow(
+  overrides: Partial<{
+    authorId: string;
+    status: StudioPoemRowFixture["status"];
+    publishedAt: Date | null;
+    title: string;
+    subtitle: string | null;
+    body: string;
+    revisions: { version: number }[];
+  }> = {},
+) {
+  const { title, subtitle, body } = poemRow();
+
+  return { ...ownershipRow(), title, subtitle, body, revisions: [{ version: 1 }], ...overrides };
+}
+
 /** A tag as `resolveTags` selects it: the id it needs and the slug it checks. */
 export const TAG_ID = "0192f5a3-2f5e-7d60-b172-4d5e6f708192";
 
 /** The id a stubbed `Review` insert comes back with. Nothing reads it; the row does. */
 export const REVIEW_ID = "0192f5a4-3061-7e71-8283-5e6f70819203";
+
+/** The same, for a `PoemRevision` — and the id the trail's own fixture carries. */
+export const REVISION_ID = "0192f5a5-4172-7f82-9394-6f7081920314";
 
 export function tagRow(overrides: Partial<{ id: string; slug: string }> = {}) {
   return { id: TAG_ID, slug: "melankholiia", ...overrides };
@@ -365,6 +459,19 @@ export function createPrismaMock() {
       // is the seed's, not the API's, and is absent for the reason the note
       // above gives: a delegate that appears here is one the application calls.
       create: vi.fn().mockResolvedValue({ id: REVIEW_ID }),
+    },
+    poemRevision: {
+      // Written by `update` when a patch changes the text — `create` on the
+      // *poem* writes the first version as a nested insert, which is one
+      // statement and never reaches this delegate.
+      create: vi.fn().mockResolvedValue({ id: REVISION_ID }),
+      // Read by the trail endpoint, and by the prune to name the versions it is
+      // keeping. Defaulted to empty so a spec that forgets to stub it gets the
+      // 404 that a poem with no history really would.
+      findMany: vi.fn().mockResolvedValue([]),
+      // The prune, on a poem that has passed the history cap. Nothing reads the
+      // count it returns; the spec asserts on the `where` it was given.
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     /**
      * The array form, which is the only one the application uses.
