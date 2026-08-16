@@ -16,9 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { ApiRequestError } from "@/lib/api/error";
-import { getGetStudioPoemQueryKey, useUpdatePoem } from "@/lib/api/generated/poems";
+import {
+  getGetPoemQueryKey,
+  getGetStudioPoemQueryKey,
+  useUpdatePoem,
+} from "@/lib/api/generated/poems";
 
-import { QUEUE_QUERY_KEY } from "../queue-key";
+import { invalidatePublicFeed, QUEUE_QUERY_KEY } from "../cache-keys";
 
 /**
  * Why the save failed, as opposed to why one field is not valid — the same split
@@ -89,18 +93,24 @@ export function EditForm({ poem, onDone }: { poem: StudioPoem; onDone: () => voi
   } = useUpdatePoem<ApiRequestError>({
     mutation: {
       /**
-       * The first `invalidateQueries` in this repo, and both keys earn their
+       * The first `invalidateQueries` in this repo, and every key earns its
        * place.
        *
        * The poem itself is awaited, so the mutation stays pending until the
        * fresh row is in the cache and the read view behind this form never
-       * paints the old text for a frame. The queue is not awaited — nothing on
-       * screen is about to show it, and the row's title and teaser have moved,
-       * so it only has to be stale by the time somebody goes back.
+       * paints the old text for a frame. Nothing else is awaited — none of it is
+       * about to be on screen, and it only has to be stale by the time somebody
+       * looks.
        *
-       * `QUEUE_QUERY_KEY` is the bare prefix of `getListPoemQueueQueryKey`,
-       * which matches every page, sort and search of the queue at once — see
-       * ./queue-key.ts.
+       * The public two are here because this page is reachable for a poem that
+       * has already left the queue: a line fixed in something that is on the
+       * fires changes what the front page and the poem's own card say, and
+       * neither of those has any reason of its own to notice. Invalidating them
+       * for a poem still waiting costs a refetch that finds the same answer.
+       *
+       * `QUEUE_QUERY_KEY` and `invalidatePublicFeed` are both derived from the
+       * generated key helpers — see ../cache-keys.ts, which is also where the
+       * reason the feed takes two keys is written down.
        *
        * Invalidating rather than writing the response straight into the cache,
        * even though `PATCH` answers with the whole updated poem: the two
@@ -112,6 +122,8 @@ export function EditForm({ poem, onDone }: { poem: StudioPoem; onDone: () => voi
       onSuccess: async () => {
         await queryClient.invalidateQueries({ queryKey: getGetStudioPoemQueryKey(poem.id) });
         queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: getGetPoemQueryKey(poem.slug) });
+        invalidatePublicFeed(queryClient);
 
         onDone();
       },

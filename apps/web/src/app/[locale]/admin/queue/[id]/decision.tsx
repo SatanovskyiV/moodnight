@@ -21,7 +21,7 @@ import { Link } from "@/i18n/navigation";
 import { payload, type ApiRequestError } from "@/lib/api/error";
 import { getGetStudioPoemQueryKey, useApprovePoem, useRejectPoem } from "@/lib/api/generated/poems";
 
-import { QUEUE_QUERY_KEY } from "../queue-key";
+import { invalidatePublicFeed, QUEUE_QUERY_KEY } from "../cache-keys";
 
 /**
  * Each decision resolved against the contract the endpoint behind it enforces.
@@ -91,18 +91,28 @@ export function Decision({ poem }: { poem: StudioPoem }) {
   });
 
   /**
-   * Both decisions land in the same two places, so the options are built once.
+   * Both decisions make the same three things stale, so the options are built
+   * once.
    *
-   * The poem is invalidated because it comes back with a new `status`, a
-   * `review` and possibly a `publishedAt` — and this component is about to show
-   * a panel over it, so the read view behind must not still say PENDING_REVIEW
-   * if the editor navigates back to it. The queue is invalidated because the
-   * poem has just left it and a list still offering the row would be a lie.
+   * The poem, because it comes back with a new `status`, a `review` and possibly
+   * a `publishedAt` — and this component is about to show a panel over it, so
+   * the read view behind must not still say PENDING_REVIEW if the editor
+   * navigates back to it. The queue, because the poem has just left it and a
+   * list still offering the row would be a lie.
+   *
+   * And the front page, which is the one that is easy to forget because nothing
+   * on this screen shows it. An approval is the moment the public feed stopped
+   * being true, and with `refetchOnWindowFocus` off and a minute of `staleTime`
+   * a home page already open in this session would go on listing what was
+   * published before — see ../cache-keys.ts. A rejection invalidates it too and
+   * costs nothing: the poem was never in that list, so the refetch finds the
+   * same page and TanStack keeps the render.
    */
   const settle = {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getGetStudioPoemQueryKey(poem.id) });
       queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+      invalidatePublicFeed(queryClient);
     },
   };
 
